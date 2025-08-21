@@ -1,0 +1,25 @@
+{
+    "id": "prun-66906be2-7d50-4cdf-9edd-b6d9396fb299",
+    "plan_id": "plan-5d052e34-eec9-4435-a0b5-1ed7bbe220dd",
+    "current_step_index": 1,
+    "state": "FAILED",
+    "end_user_id": "Vinayak_Vispute-1",
+    "outputs": {
+        "clarifications": [],
+        "step_outputs": {
+            "$openai_pricing": {
+                "value": "{\"meta\":null,\"content\":[{\"type\":\"text\",\"text\":\"[Skip to content](https://chatgpt.com/#main)\\n\\n# ChatGPT\\n\\n# Temporary Chat\\n\\nThis chat won't appear in history or be used to train our models. For safety purposes, we may keep a copy of this chat for up to 30 days.\\n\\n# ChatGPT\\n\\n# Temporary Chat\\n\\nThis chat won't appear in history or be used to train our models. For safety purposes, we may keep a copy of this chat for up to 30 days.\\n\\nAttach\\n\\nSearch\\n\\nStudy\\n\\nVoice\\n\\nBy messaging ChatGPT, you agree to our [Terms](https://openai.com/terms) and have read our [Privacy Policy](https://openai.com/privacy).\",\"annotations\":null,\"meta\":null}],\"structuredContent\":null,\"isError\":false}",
+                "summary": "{\"meta\":null,\"content\":[{\"type\":\"text\",\"text\":\"[Skip to content](https://chatgpt.com/#main)\\n\\n# ChatGPT\\n\\n# Temporary Chat\\n\\nThis chat won't appear in history or be used to train our models. For safety purposes, we may keep a copy of this chat for up to 30 days.\\n\\n# ChatGPT\\n\\n# Temporary Chat\\n\\nThis chat won't appear in history or be used to train our models. For safety purposes, we may keep a copy of this chat for up to 30 days.\\n\\nAttach\\n\\nSearch\\n\\nStudy\\n\\nVoice\\n\\nBy messaging ChatGPT, you agree to our [Terms](https://openai.com/terms) and have read our [Privacy Policy](https://openai.com/privacy).\",\"annotations\":null,\"meta\":null}],\"structuredContent\":null,\"isError\":false}"
+            },
+            "$anthropic_pricing": {
+                "value": "Tool portia:mcp:custom:mcp.firecrawl.dev:firecrawl_scrape failed: Error: ToolHardError(ReadTimeout('The read operation timed out'))\n Please fix your mistakes.",
+                "summary": null
+            }
+        },
+        "final_output": {
+            "value": "Tool portia:mcp:custom:mcp.firecrawl.dev:firecrawl_scrape failed: Error: ToolHardError(ReadTimeout('The read operation timed out'))\n Please fix your mistakes.",
+            "summary": null
+        }
+    },
+    "plan_run_inputs": {}
+}

@@ -1,0 +1,13 @@
+{
+    "id": "prun-df969979-cef1-4739-a2a2-76aa589041ea",
+    "plan_id": "plan-56b2fdb4-1d2a-4dd3-97e8-46148f67d0e6",
+    "current_step_index": 0,
+    "state": "NOT_STARTED",
+    "end_user_id": "Vinayak_Vispute-1",
+    "outputs": {
+        "clarifications": [],
+        "step_outputs": {},
+        "final_output": null
+    },
+    "plan_run_inputs": {}
+}

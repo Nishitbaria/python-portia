@@ -1,0 +1,21 @@
+{
+    "id": "prun-8e5d0758-d077-4104-bd95-70f9deea24b8",
+    "plan_id": "plan-6e31c8d1-ccb1-4778-9bf4-d90ad98edfe8",
+    "current_step_index": 0,
+    "state": "COMPLETE",
+    "end_user_id": "portia:default_user",
+    "outputs": {
+        "clarifications": [],
+        "step_outputs": {
+            "$calculation_result": {
+                "value": "3.0",
+                "summary": "3.0"
+            }
+        },
+        "final_output": {
+            "value": "3.0",
+            "summary": "The task was to calculate 1 + 2. The output is 3.0."
+        }
+    },
+    "plan_run_inputs": {}
+}

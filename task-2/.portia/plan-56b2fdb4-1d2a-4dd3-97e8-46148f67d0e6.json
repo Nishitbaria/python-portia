@@ -1,0 +1,117 @@
+{
+    "id": "plan-56b2fdb4-1d2a-4dd3-97e8-46148f67d0e6",
+    "plan_context": {
+        "query": "\nFind the pricing for Chatgpt from OpenAI, Claude from Antropic and Grok AI:\n1) OpenAI ChatGPT (chatgpt.com)\n2) Anthropic Claude (claude.ai)\n3) xAI Grok (grok.com / help.x.com)\n\nGive a summary of the pricing information for each in tabular format.\n",
+        "tool_ids": [
+            "calculator_tool",
+            "crawl_tool",
+            "extract_tool",
+            "file_reader_tool",
+            "file_writer_tool",
+            "image_understanding_tool",
+            "llm_tool",
+            "map_tool",
+            "mcp:perplexity-ask:perplexity_ask",
+            "portia:github::list_repos",
+            "portia:github::search_repos",
+            "portia:github::star_repo",
+            "portia:google:docs:get_document",
+            "portia:google:docs:get_structured_document",
+            "portia:google:drive:search",
+            "portia:google:gcalendar:check_availability",
+            "portia:google:gcalendar:create_event",
+            "portia:google:gcalendar:delete_event",
+            "portia:google:gcalendar:get_event_details",
+            "portia:google:gcalendar:get_events_by_properties",
+            "portia:google:gcalendar:modify_event",
+            "portia:google:gmail:draft_email",
+            "portia:google:gmail:search_email",
+            "portia:google:gmail:send_draft_email",
+            "portia:google:gmail:send_email",
+            "portia:google:sheets:get_spreadsheet",
+            "portia:mcp:custom:mcp.firecrawl.dev:firecrawl_check_crawl_status",
+            "portia:mcp:custom:mcp.firecrawl.dev:firecrawl_crawl",
+            "portia:mcp:custom:mcp.firecrawl.dev:firecrawl_deep_research",
+            "portia:mcp:custom:mcp.firecrawl.dev:firecrawl_extract",
+            "portia:mcp:custom:mcp.firecrawl.dev:firecrawl_generate_llmstxt",
+            "portia:mcp:custom:mcp.firecrawl.dev:firecrawl_map",
+            "portia:mcp:custom:mcp.firecrawl.dev:firecrawl_scrape",
+            "portia:mcp:custom:mcp.firecrawl.dev:firecrawl_search",
+            "portia:slack:bot:list_conversation_ids",
+            "portia:slack:bot:list_user_ids",
+            "portia:slack:bot:send_message",
+            "portia:slack:user:conversation_history",
+            "portia:slack:user:find_message",
+            "portia:tavily::search",
+            "portia:zendesk:groups:list_groups_for_user",
+            "portia:zendesk:help_center:create_article_comments",
+            "portia:zendesk:help_center:list_article_comments",
+            "portia:zendesk:help_center:list_articles_by_section",
+            "portia:zendesk:help_center:list_post_comments",
+            "portia:zendesk:help_center:search_articles",
+            "portia:zendesk:help_center:show_article",
+            "portia:zendesk:help_center:show_post",
+            "portia:zendesk:help_center:show_section",
+            "portia:zendesk:organizations:search",
+            "portia:zendesk:organizations:show",
+            "portia:zendesk:requests:list_comments",
+            "portia:zendesk:requests:search",
+            "portia:zendesk:requests:show",
+            "portia:zendesk:requests:show_comment",
+            "portia:zendesk:tickets:count",
+            "portia:zendesk:tickets:count_comments",
+            "portia:zendesk:tickets:create",
+            "portia:zendesk:tickets:list_comments",
+            "portia:zendesk:tickets:show",
+            "portia:zendesk:tickets:show_metrics",
+            "portia:zendesk:tickets:update",
+            "portia:zendesk:users:search",
+            "portia:zendesk:users:show",
+            "search_tool"
+        ]
+    },
+    "steps": [
+        {
+            "task": "Scrape the pricing related content for OpenAI ChatGPT from the website using the URL 'https://chatgpt.com' to extract pricing information.",
+            "inputs": [],
+            "tool_id": "portia:mcp:custom:mcp.firecrawl.dev:firecrawl_scrape",
+            "output": "$chatgpt_scrape",
+            "condition": null
+        },
+        {
+            "task": "Scrape the pricing related content for Anthropic Claude from the website using the URL 'https://claude.ai' to extract pricing information.",
+            "inputs": [],
+            "tool_id": "portia:mcp:custom:mcp.firecrawl.dev:firecrawl_scrape",
+            "output": "$claude_scrape",
+            "condition": null
+        },
+        {
+            "task": "Scrape the pricing related content for xAI Grok from the website using the URL 'https://grok.com' as provided in the query to extract pricing information.",
+            "inputs": [],
+            "tool_id": "portia:mcp:custom:mcp.firecrawl.dev:firecrawl_scrape",
+            "output": "$grok_scrape",
+            "condition": null
+        },
+        {
+            "task": "Using the scraped outputs from OpenAI ChatGPT ($chatgpt_scrape), Anthropic Claude ($claude_scrape), and xAI Grok ($grok_scrape), generate a summary table in tabular format that lists the product names and their corresponding pricing information collected from the respective websites.",
+            "inputs": [
+                {
+                    "name": "$chatgpt_scrape",
+                    "description": "Scraped content from https://chatgpt.com containing pricing details for OpenAI ChatGPT."
+                },
+                {
+                    "name": "$claude_scrape",
+                    "description": "Scraped content from https://claude.ai containing pricing details for Anthropic Claude."
+                },
+                {
+                    "name": "$grok_scrape",
+                    "description": "Scraped content from https://grok.com containing pricing details for xAI Grok."
+                }
+            ],
+            "tool_id": "llm_tool",
+            "output": "$pricing_summary",
+            "condition": null
+        }
+    ],
+    "plan_inputs": []
+}

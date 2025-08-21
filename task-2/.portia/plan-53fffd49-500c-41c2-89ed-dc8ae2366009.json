@@ -1,0 +1,83 @@
+{
+    "id": "plan-53fffd49-500c-41c2-89ed-dc8ae2366009",
+    "plan_context": {
+        "query": "\nStep 1 — Perplexity (URL curation only)\nYou are a strict URL curator. Find the current OFFICIAL pricing/help pages needed to extract CONSUMER “chatbot access” pricing for:\n1) OpenAI ChatGPT (chatgpt.com)\n2) Anthropic Claude (claude.ai)\n3) xAI Grok (grok.com / help.x.com)\n\nRules:\n- Prefer official pricing/help/FAQ pages over blogs or news.\n- Return ONLY a compact JSON with keys: {\"chatgpt_urls\":[], \"claude_urls\":[], \"grok_urls\":[]}.\n- Each array must contain 1-4 canonical URLs (no duplicates, no tracking params).\n- Do NOT include commentary.\n\nSTRICT OUTPUT INSTRUCTIONS (MANDATORY):\n- Return RAW JSON only. No prose, no code fences, no backticks, no Markdown.\n- The response MUST start with '{' and end with '}'.\n- Use only double quotes, no trailing commas.\n- URLs must be canonical https links without query parameters or fragments.\n- If unsure for a provider, return an empty array for that key.\n\nStep 2 — Firecrawl (fetch and clean)\nRun Firecrawl on each URL from step 1. Ask Firecrawl to return clean text/Markdown. If your tool allows a prompt, use:\n\nCrawl each provided URL at depth 0.\nReturn the page content as plain Markdown (no boilerplate navigation).\nInclude page title, last-modified if available, and full canonical URL at the top.\n\nStep 3 — Perplexity (structured extraction)\nGoal: turn Firecrawl text into the pricing JSON.\nYou are a pricing extraction agent. Use ONLY the Firecrawl page texts below (treat them as ground truth). \nExtract CONSUMER chatbot access pricing for ChatGPT, Claude, and Grok.\n\nOutput currency preference keep USD.\n\nINPUT PAGES (verbatim from Firecrawl):\n\nREQUIREMENTS:\n1) Extract only clearly stated plans and prices.\n2) If a plan says “from $X”, use \"price_from\".\n3) If a plan is region-limited or bundled (e.g., access via X Premium+), put that in \"notes\" and \"availability\".\n4) Every plan MUST include a \"sources\" array with the exact canonical URLs you used.\n5) If something is unclear on all supplied pages, set that numeric field to null and add a concise \"notes\".\n",
+        "tool_ids": [
+            "mcp:firecrawl:firecrawl_check_crawl_status",
+            "mcp:firecrawl:firecrawl_crawl",
+            "mcp:firecrawl:firecrawl_deep_research",
+            "mcp:firecrawl:firecrawl_extract",
+            "mcp:firecrawl:firecrawl_generate_llmstxt",
+            "mcp:firecrawl:firecrawl_map",
+            "mcp:firecrawl:firecrawl_scrape",
+            "mcp:firecrawl:firecrawl_search",
+            "mcp:perplexity-ask:perplexity_ask"
+        ]
+    },
+    "steps": [
+        {
+            "task": "Curate the current OFFICIAL pricing/help pages for consumer chatbot access for OpenAI ChatGPT (chatgpt.com), Anthropic Claude (claude.ai), and xAI Grok (grok.com / help.x.com). Return a compact JSON with keys: \"chatgpt_urls\", \"claude_urls\", \"grok_urls\" containing 1-4 canonical https URLs each (without duplicates, tracking parameters, query parameters, or fragments). Do not include any commentary.",
+            "inputs": [],
+            "tool_id": "mcp:perplexity-ask:perplexity_ask",
+            "output": "$curated_urls",
+            "condition": null
+        },
+        {
+            "task": "Use the first URL from the chatgpt_urls array from the curated URLs to fetch and clean the page content. Crawl the provided URL at depth 0 and return the page content as plain Markdown that includes the page title, last-modified if available, and the full canonical URL at the top.",
+            "inputs": [
+                {
+                    "name": "$curated_urls",
+                    "description": "The JSON object containing the curated URLs with key chatgpt_urls."
+                }
+            ],
+            "tool_id": "mcp:firecrawl:firecrawl_scrape",
+            "output": "$chatgpt_content",
+            "condition": null
+        },
+        {
+            "task": "Use the first URL from the claude_urls array from the curated URLs to fetch and clean the page content. Crawl the provided URL at depth 0 and return the page content as plain Markdown that includes the page title, last-modified if available, and the full canonical URL at the top.",
+            "inputs": [
+                {
+                    "name": "$curated_urls",
+                    "description": "The JSON object containing the curated URLs with key claude_urls."
+                }
+            ],
+            "tool_id": "mcp:firecrawl:firecrawl_scrape",
+            "output": "$claude_content",
+            "condition": null
+        },
+        {
+            "task": "Use the first URL from the grok_urls array from the curated URLs to fetch and clean the page content. Crawl the provided URL at depth 0 and return the page content as plain Markdown that includes the page title, last-modified if available, and the full canonical URL at the top.",
+            "inputs": [
+                {
+                    "name": "$curated_urls",
+                    "description": "The JSON object containing the curated URLs with key grok_urls."
+                }
+            ],
+            "tool_id": "mcp:firecrawl:firecrawl_scrape",
+            "output": "$grok_content",
+            "condition": null
+        },
+        {
+            "task": "Using the Firecrawl page texts provided from the ChatGPT, Claude, and Grok pages, extract the consumer chatbot access pricing details for ChatGPT, Claude, and Grok. Follow these requirements: extract only clearly stated plans and prices; use 'price_from' when a plan states 'from $X'; for region-limited or bundled plans include details in 'notes' and specify 'availability'; include a 'sources' array in every plan with the exact canonical URLs used; if information is unclear set numeric fields to null with added concise 'notes'; output prices in USD. Return the pricing information as a structured JSON.",
+            "inputs": [
+                {
+                    "name": "$chatgpt_content",
+                    "description": "The cleaned Markdown content of the ChatGPT pricing/help page."
+                },
+                {
+                    "name": "$claude_content",
+                    "description": "The cleaned Markdown content of the Anthropic Claude pricing/help page."
+                },
+                {
+                    "name": "$grok_content",
+                    "description": "The cleaned Markdown content of the xAI Grok pricing/help page."
+                }
+            ],
+            "tool_id": "mcp:perplexity-ask:perplexity_ask",
+            "output": "$pricing_json",
+            "condition": null
+        }
+    ],
+    "plan_inputs": []
+}

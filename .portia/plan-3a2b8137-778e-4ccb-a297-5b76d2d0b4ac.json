@@ -1,0 +1,22 @@
+{
+    "id": "plan-3a2b8137-778e-4ccb-a297-5b76d2d0b4ac",
+    "plan_context": {
+        "query": "add 1 + 2",
+        "tool_ids": [
+            "calculator_tool",
+            "llm_tool",
+            "search_tool",
+            "weather_tool"
+        ]
+    },
+    "steps": [
+        {
+            "task": "add 1 + 2",
+            "inputs": [],
+            "tool_id": "calculator_tool",
+            "output": "$result",
+            "condition": null
+        }
+    ],
+    "plan_inputs": []
+}
