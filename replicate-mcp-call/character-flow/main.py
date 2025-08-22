@@ -30,6 +30,7 @@ class FinalOutput(BaseModel):
     character_url: str
     product_url: str
     product_description: str
+    dialog: str
 
 
 def validate_url(url):
@@ -61,6 +62,66 @@ def join_array_to_string(array_output):
         return array_output
     else:
         return str(array_output)
+
+
+def extract_and_join_text_content(json_output):
+    """Extract and join text content from complex JSON structure"""
+    try:
+        import json
+
+        if isinstance(json_output, str):
+            data = json.loads(json_output)
+        else:
+            data = json_output
+
+        # Navigate through the JSON structure to find text content
+        if isinstance(data, dict):
+            if "content" in data and isinstance(data["content"], list):
+                text_parts = []
+                for item in data["content"]:
+                    if isinstance(item, dict) and "text" in item:
+                        text_content = item["text"]
+                        # Parse the text content if it's a JSON string
+                        try:
+                            parsed_text = json.loads(text_content)
+                            if isinstance(parsed_text, list):
+                                text_parts.extend(parsed_text)
+                            else:
+                                text_parts.append(str(parsed_text))
+                        except json.JSONDecodeError:
+                            text_parts.append(text_content)
+                return " ".join(text_parts)
+            elif "text" in data:
+                return data["text"]
+
+        # Fallback: convert to string
+        return str(json_output)
+    except Exception as e:
+        # If any error occurs, return the original as string
+        return str(json_output)
+
+
+def get_dialog_choice():
+    """Get user's choice for dialog generation"""
+    print("\n=== Dialog Generation ===")
+    print("1. Enter custom dialog")
+    print("2. Auto generate dialog")
+
+    while True:
+        choice = input("\nEnter your choice (1 or 2): ").strip()
+        if choice in ["1", "2"]:
+            return choice
+        print("Invalid choice. Please enter 1 or 2.")
+
+
+def get_custom_dialog():
+    """Get custom dialog from user"""
+    print("\n📝 You chose to enter custom dialog")
+    while True:
+        dialog = input("Enter your custom dialog: ").strip()
+        if dialog and len(dialog) > 0:
+            return dialog
+        print("Dialog cannot be empty. Please enter a valid dialog.")
 
 
 # System prompt for product description
@@ -107,14 +168,58 @@ Bundled Hand Wash.
 Clear PET pump, black dispenser, minimalist white label, translucent gel, soft daylight backdrop
 """
 
+# System prompt for dialog generation
+DIALOG_GENERATION_SYSTEM_PROMPT = """
+You are a UGC ad dialogue writer.
+
+GOAL
+Write a natural, creator-style dialogue for a short video using ONLY the product description provided in `prompt` (and optional clear visual cues from the image).
+
+INPUTS
+- prompt: the product description supplied by the user. It may be plain text OR JSON.
+- image (optional): use only obvious visuals (container type/color, label/brand text). If image and prompt conflict, the prompt is the source of truth.
+
+OUTPUT RULES
+1) Output EXACTLY 2 sentences on separate lines; speakable in ~10 seconds total (≈18–28 words combined).
+2) Sentence 1 = quick hook + brand/product mention (once).
+3) Sentence 2 = 1–2 concrete attributes/benefits pulled from the prompt; add a soft CTA only if `include_cta=true`.
+4) Do NOT invent claims, numbers, SPF, ingredients, or certifications. No filler like "for all skin types," "pH-balanced," etc., unless explicitly present in the prompt.
+5) Keep language simple, first-person creator by default (switch to narrator if `voice="narrator"`). No emojis/hashtags.
+
+PROMPT PARSING
+- If plain text, extract brand/product/type/finish/benefits from the text.
+- If JSON, read these fields when present:
+  {
+    "brand": "string",
+    "product_name": "string",
+    "type": "sunscreen|serum|face wash|...",
+    "finish_or_feel": ["lightweight","fast-absorbing","matte","soft glow", ...],
+    "key_benefits": ["daily protection","hydrates","softens", ...],
+    "notes": ["no white cast","fragrance-free"],
+    "voice": "creator|narrator",
+    "tone": "casual|luxury-minimal|clinical",
+    "include_cta": true|false,
+    "cta": "Tap to try|Shop now|Link in bio",
+    "language": "en|hi|..."
+  }
+
+STYLE
+- Friendly UGC tone, concise, present tense. Prefer one texture word + one benefit.
+- Brand mention once; keep ~9–14 words per sentence.
+
+FORMAT
+Return ONLY the two sentences on separate lines no titles, bullets, or quotes.
+"""
+
 
 def pack_final_output(
-    character_url: str, product_url: str, product_description: str
+    character_url: str, product_url: str, product_description: str, dialog: str
 ) -> dict:
     return {
         "character_url": character_url,
         "product_url": product_url,
         "product_description": product_description,
+        "dialog": dialog,
     }
 
 
@@ -141,6 +246,20 @@ plan = (
         description="LLM system prompt",
         default_value=PRODUCT_DESCRIPTION_SYSTEM_PROMPT,
     )
+    .input(
+        name="dialog_choice",
+        description="Dialog choice: 1 for custom dialog, 2 for auto generate",
+    )
+    .input(
+        name="custom_dialog",
+        description="Custom dialog (required if dialog_choice is 1)",
+        default_value="",
+    )
+    .input(
+        name="dialog_system_prompt",
+        description="Dialog generation system prompt",
+        default_value=DIALOG_GENERATION_SYSTEM_PROMPT,
+    )
     .function_step(
         function=get_character_url,
         args={
@@ -161,7 +280,7 @@ plan = (
         Generate a product description using Claude-4-Sonnet on Replicate. Use the provided system prompt and product image URL to create a detailed product description.
         Always include:
         - version = "anthropic/claude-4-sonnet"
-        - input.prompt = "Write Prompt for this product"
+        - input.prompt = "Your Task it To Generate Product description in 2 lines, Brand Name"
         - input.system_prompt = [The detailed system prompt for product description]
         - input.image = [product image URL]
         - jq_filter = ".output"
@@ -171,9 +290,42 @@ plan = (
         step_name="generate_product_description",
     )
     .function_step(
-        function=join_array_to_string,
-        args={"array_output": StepOutput("generate_product_description")},
+        function=extract_and_join_text_content,
+        args={"json_output": StepOutput("generate_product_description")},
         step_name="format_product_description",
+    )
+    .single_tool_agent_step(
+        tool="portia:mcp:custom:mcp.replicate.com:create_predictions",
+        task="""
+        Generate a UGC dialog using Claude-4-Sonnet on Replicate. Use the provided system prompt and product description to create a natural, creator-style dialogue.
+        Always include:
+        - version = "anthropic/claude-4-sonnet"
+        - input.prompt = [The product description from previous step]
+        - input.system_prompt = [The dialog generation system prompt]
+        - jq_filter = ".output"
+        - Prefer = "wait"
+        """,
+        inputs=[
+            StepOutput("format_product_description"),
+            Input("dialog_system_prompt"),
+        ],
+        step_name="generate_auto_dialog",
+    )
+    .function_step(
+        function=extract_and_join_text_content,
+        args={"json_output": StepOutput("generate_auto_dialog")},
+        step_name="format_auto_dialog",
+    )
+    .function_step(
+        function=lambda auto_dialog, custom_dialog, dialog_choice: (
+            auto_dialog if dialog_choice == "2" else custom_dialog
+        ),
+        args={
+            "auto_dialog": StepOutput("format_auto_dialog"),
+            "custom_dialog": Input("custom_dialog"),
+            "dialog_choice": Input("dialog_choice"),
+        },
+        step_name="format_dialog",
     )
     .function_step(
         function=pack_final_output,
@@ -181,6 +333,7 @@ plan = (
             "character_url": StepOutput("get_character_url"),
             "product_url": Input("product_url"),
             "product_description": StepOutput("format_product_description"),
+            "dialog": StepOutput("format_dialog"),
         },
         step_name="pack_final_output",
     )
@@ -247,12 +400,24 @@ def main():
             break
         print("Invalid URL. Please enter a valid URL starting with http:// or https://")
 
+    # Get dialog choice
+    dialog_choice = get_dialog_choice()
+    custom_dialog = ""
+
+    if dialog_choice == "1":
+        custom_dialog = get_custom_dialog()
+        print(f"✅ Custom dialog: {custom_dialog}")
+    else:
+        print("\n🤖 You chose to auto generate dialog")
+
     # Prepare inputs for the plan
     plan_inputs = {
         "character_choice": character_choice,
         "custom_character_url": custom_character_url,
         "prebuild_character_choice": prebuild_character_choice,
         "product_url": product_url,
+        "dialog_choice": dialog_choice,
+        "custom_dialog": custom_dialog,
     }
 
     # Run the plan
@@ -265,6 +430,7 @@ def main():
     print(f"Character URL: {final_output['character_url']}")
     print(f"Product URL: {final_output['product_url']}")
     print(f"Product Description: {final_output['product_description']}")
+    print(f"Dialog: {final_output['dialog']}")
 
     return final_output
 
