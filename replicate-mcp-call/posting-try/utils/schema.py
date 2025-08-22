@@ -30,3 +30,14 @@ class PostingResult(BaseModel):
         ...,
         description="The target social media platform(s) for posting: 'twitter' for Twitter only, 'instagram' for Instagram only, or 'both' for both platforms.",
     )
+
+
+class ImageGenerationResult(BaseModel):
+    image_urls: List[str] = Field(
+        ...,
+        description="List of generated image URLs from Replicate",
+    )
+    selected_url: Optional[str] = Field(
+        None,
+        description="The URL of the selected image for posting",
+    )
