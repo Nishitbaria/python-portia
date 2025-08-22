@@ -7,6 +7,11 @@ from portia import (
     PortiaToolRegistry,
     StorageClass,
     LogLevel,
+    PlanBuilderV2,
+    StepOutput,
+    Input,
+    MultipleChoiceClarification,
+    InputClarification,
 )
 from portia.cli import CLIExecutionHooks
 import re
@@ -44,10 +49,18 @@ portia = Portia(
         .with_tool_description(
             "portia:mcp:custom:mcp.replicate.com:create_predictions",
             """
-            Use this tool to generate video with Replicate's kwaivgi/kling-v1.6-standard model.
+            Use this tool to generate images with Replicate's Flux-Schnell model.
             Always include:
-              - version = "kwaivgi/kling-v1.6-standard"
+              - version = "black-forest-labs/flux-schnell"
               - prompt = user's description
+            Optional fields (decide from user request):
+              - input.num_outputs (default 1, range 1-4)
+              - input.aspect_ratio (default "1:1")
+              - input.output_format (default "webp")
+              - input.output_quality (default 80)
+              - input.num_inference_steps (default 4)
+              - input.go_fast (default true)
+              - input.disable_safety_checker (default false)
             Always set Prefer = "wait=1".
             Also set webhook = "https://unbiased-carefully-marmot.ngrok-free.app"
             Extract and return only status and id using jq_filter
@@ -64,15 +77,35 @@ portia = Portia(
             Prefer extracting only the fields status and output using jq_filter = {status: .status, output: .output}.
             Return exactly a JSON object with:
               - status: string (e.g. "starting", "processing", "succeeded", "failed")
-              - output: list of video URL strings if present, otherwise null
+              - output: list of image URL strings if present, otherwise null
             MAKE ONLY ONE CALL.
             """,
         )
         .with_tool_description(
-            "portia:mcp:custom:us2.make.com:s2795860_integration_instagram_for_business_facebook_log",
+            "portia:mcp:custom:us2.make.com:s2795860_mcp_social_post_ig_x_both",
             f"""
-            Use this tool to post an video to Instagram with accountId {ACCOUNT_ID}.
-            """,
+    Use this tool to post social content to Twitter, Instagram, or both via Make.com.
+
+    Input payload fields:
+    - channels: "twitter" | "instagram" | "both"
+      → decides where to post.
+    - caption: Text caption (required, used for Instagram and as fallback for Twitter).
+    - tweet_text: Optional tweet text (if empty, caption will be used).
+    - image_url: Required for Instagram posts (publicly accessible image/video URL).
+
+    Behavior:
+    - If channels = "instagram": creates a new Instagram post with image_url + caption.
+    - If channels = "twitter": posts a tweet with tweet_text (or caption if missing).
+    - If channels = "both": posts to Instagram first, then to Twitter in sequence.
+
+    Example payload:
+    {{
+      "channels": "both",
+      "caption": "New feature live! 🚀",
+      "tweet_text": "It's live. Details inside.",
+      "image_url": "https://cdn.example.com/hero.jpg",
+    }}
+    """,
         )
     ),
 )
@@ -88,18 +121,9 @@ class PredictionPollResult(BaseModel):
     output: Optional[List[str]] = None
 
 
-# -------- Plan 1: Generate images --------
-user_prompt = input("Enter your video prompt: ")
-
-plan1 = portia.plan(
-    f"Generate  video of {user_prompt} using kling-v1.6-standard, with the output in the format of a list of URLs of generated video"
-)
-print("\n== Plan 1 ==")
-print(plan1.pretty_print())
-
-pr1 = portia.run_plan(plan1, structured_output_schema=OutputSpecialId)
-
-print("pr1.outputs.final_output.value", pr1.outputs.final_output.value)
+class CaptionGenerationResult(BaseModel):
+    caption: str
+    tweet_text: Optional[str] = None
 
 
 # -------- Poll Replicate prediction until completion and collect URLs --------
@@ -132,6 +156,19 @@ def extract_id_and_status(value):
         status = m_status.group(1)
     return pred_id, status
 
+
+# -------- Plan 1: Generate images --------
+user_prompt = input("Enter your image prompt: ")
+
+plan1 = portia.plan(
+    f"Generate images of {user_prompt} using flux-schnell, with the output in the format of a list of URLs of generated images"
+)
+print("\n== Plan 1 ==")
+print(plan1.pretty_print())
+
+pr1 = portia.run_plan(plan1, structured_output_schema=OutputSpecialId)
+
+print("pr1.outputs.final_output.value", pr1.outputs.final_output.value)
 
 prediction_id, prediction_status = extract_id_and_status(pr1.outputs.final_output.value)
 if not prediction_id:
@@ -193,87 +230,200 @@ while True:
 print("\nURLs:")
 print(json.dumps(final_urls, indent=2))
 
+# -------- Plan 2: Social Media Posting Flow --------
+if final_urls:
+    # Let user choose which image to use
+    print(f"\nGenerated {len(final_urls)} images:")
+    for i, url in enumerate(final_urls, 1):
+        print(f"{i}. {url}")
 
-# def extract_urls(value):
+    while True:
+        try:
+            choice = int(
+                input(f"\nChoose an image to post [1-{len(final_urls)}]: ").strip()
+            )
+            if 1 <= choice <= len(final_urls):
+                chosen_url = final_urls[choice - 1]
+                break
+            else:
+                print(f"Please enter a number between 1 and {len(final_urls)}")
+        except ValueError:
+            print("Please enter a valid number")
 
-#     url_pattern = r'https://[^\s"\]]+\.(?:png|jpg|jpeg|webp)'
+    # Ask user for posting preferences
+    print(f"\nImage selected successfully! URL: {chosen_url}")
 
-#     # Case: already a list of URLs
-#     if isinstance(value, list):
-#         if all(isinstance(x, str) and x.startswith("http") for x in value):
-#             return value
-#         # Fallthrough: attempt to find URLs within list items
-#         text = "\n".join(str(x) for x in value)
-#         return re.findall(url_pattern, text)
+    # Use clarification to get posting preferences
+    posting_plan = portia.plan(
+        f"""
+        Ask the user where they want to post the image: Instagram, Twitter, or both.
+        The image URL is: {chosen_url}
+        The original prompt was: {user_prompt}
+        """
+    )
 
-#     # Case: dict with content/text (Portia Output shape)
-#     if isinstance(value, dict):
-#         if (
-#             "content" in value
-#             and isinstance(value["content"], list)
-#             and value["content"]
-#         ):
-#             first = value["content"][0]
-#             if isinstance(first, dict) and "text" in first:
-#                 text_val = first["text"]
-#                 try:
-#                     parsed = json.loads(text_val)
-#                     return extract_urls(parsed)
-#                 except json.JSONDecodeError:
-#                     return re.findall(url_pattern, text_val)
-#         # Fallback: scan dict as text
-#         return re.findall(url_pattern, json.dumps(value))
+    posting_run = portia.run_plan(posting_plan)
 
-#     # Case: string
-#     if isinstance(value, str):
-#         # Try JSON first
-#         try:
-#             parsed = json.loads(value)
-#             return extract_urls(parsed)
-#         except json.JSONDecodeError:
-#             return re.findall(url_pattern, value)
+    # Handle clarifications for posting preferences
+    while posting_run.state == "NEED_CLARIFICATION":
+        clarifications = posting_run.get_outstanding_clarifications()
+        for clarification in clarifications:
+            if isinstance(clarification, MultipleChoiceClarification):
+                print(f"\n{clarification.user_guidance}")
+                print("Options:")
+                for i, option in enumerate(clarification.options, 1):
+                    print(f"{i}. {option}")
+                choice = input("Enter your choice (1, 2, 3, etc.): ").strip()
+                try:
+                    selected_option = clarification.options[int(choice) - 1]
+                    posting_run = portia.resolve_clarification(
+                        clarification, selected_option, posting_run
+                    )
+                except (ValueError, IndexError):
+                    print("Invalid choice. Please try again.")
+            elif isinstance(clarification, InputClarification):
+                print(f"\n{clarification.user_guidance}")
+                user_input = input("Enter your response: ").strip()
+                posting_run = portia.resolve_clarification(
+                    clarification, user_input, posting_run
+                )
 
-#     # Fallback: stringify and scan
-#     return re.findall(url_pattern, str(value))
+        posting_run = portia.resume(posting_run)
 
+    # Extract posting preference from the run
+    posting_preference = posting_run.outputs.final_output.value.lower()
 
-# # Prefer the last step output if present (often contains raw tool output)
-# raw_output = None
-# if pr1.outputs.step_outputs:
-#     last_output_obj = list(pr1.outputs.step_outputs.values())[-1]
-#     # Output object exposes get_value() which returns the stored value
-#     try:
-#         raw_output = last_output_obj.get_value()
-#     except Exception:
-#         raw_output = getattr(last_output_obj, "value", None)
-# else:
-#     raw_output = pr1.outputs.final_output.value
+    # Determine channels based on user preference
+    if "instagram" in posting_preference and "twitter" in posting_preference:
+        channels = "both"
+    elif "instagram" in posting_preference:
+        channels = "instagram"
+    elif "twitter" in posting_preference:
+        channels = "twitter"
+    else:
+        print("Could not determine posting preference. Defaulting to Instagram.")
+        channels = "instagram"
 
-# urls = extract_urls(raw_output)
+    print(f"\nPosting to: {channels}")
 
-# # If we still don't have URLs, try the summarized final output text
-# if not urls:
-#     urls = extract_urls(pr1.outputs.final_output.value)
+    # Generate caption using PlanBuilderV2
+    caption_plan = (
+        PlanBuilderV2(
+            f"Generate engaging social media captions for an image about {user_prompt}"
+        )
+        .input(name="image_url", description="The URL of the generated image")
+        .input(
+            name="original_prompt",
+            description="The original prompt used to generate the image",
+        )
+        .input(
+            name="channels", description="Where to post: instagram, twitter, or both"
+        )
+        .llm_step(
+            task=f"""
+            Generate engaging social media captions for an image.
+            
+            Image URL: {chosen_url}
+            Original prompt: {user_prompt}
+            Posting to: {channels}
+            
+            Create:
+            1. An Instagram caption (engaging, descriptive, with relevant hashtags)
+            2. A Twitter post text (shorter, punchy, within character limits)
+            
+            Make them engaging, relevant to the image content, and appropriate for each platform.
+            Use emojis where appropriate but don't overdo it.
+            """,
+            inputs=[Input("image_url"), Input("original_prompt"), Input("channels")],
+            output_schema=CaptionGenerationResult,
+            step_name="generate_captions",
+        )
+        .final_output(output_schema=CaptionGenerationResult)
+        .build()
+    )
 
-# print(f"\nFound {len(urls)} image URLs:")
-# for i, u in enumerate(urls, 1):
-#     print(f"{i}. {u}")
+    caption_run = portia.run_plan(
+        caption_plan,
+        plan_run_inputs={
+            "image_url": chosen_url,
+            "original_prompt": user_prompt,
+            "channels": channels,
+        },
+    )
 
-# if not urls:
-#     print("No image URLs found in the output!")
-#     exit(1)
+    generated_caption = caption_run.outputs.final_output.value.caption
+    generated_tweet = (
+        caption_run.outputs.final_output.value.tweet_text or generated_caption
+    )
 
-# choice = int(input(f"Choose an image [1-{len(urls)}]: ").strip())
-# chosen_url = urls[choice - 1]
-# print(f"\nYou chose: {chosen_url}")
+    print(f"\nGenerated Instagram Caption:")
+    print(generated_caption)
+    if channels in ["twitter", "both"]:
+        print(f"\nGenerated Tweet Text:")
+        print(generated_tweet)
 
-# # -------- Plan 2: Post to Instagram --------
-# plan2 = portia.plan(
-#     f"Post the selected image to Instagram with accountId {ACCOUNT_ID} and image_url {chosen_url}"
-# )
-# print("\n== Plan 2 ==")
-# print(plan2.pretty_print())
+    # Validate caption with user
+    while True:
+        validation_choice = (
+            input("\nDo you want to use this caption? (yes/no/regenerate): ")
+            .strip()
+            .lower()
+        )
 
-# pr2 = portia.run_plan(plan2)
-# print("\nInstagram Post Result:")
-# print(pr2.outputs.final_output.value)
+        if validation_choice in ["yes", "y"]:
+            break
+        elif validation_choice in ["no", "n"]:
+            print("Caption rejected. Exiting without posting.")
+            exit(0)
+        elif validation_choice in ["regenerate", "r"]:
+            # Regenerate caption
+            caption_run = portia.run_plan(
+                caption_plan,
+                plan_run_inputs={
+                    "image_url": chosen_url,
+                    "original_prompt": user_prompt,
+                    "channels": channels,
+                },
+            )
+
+            generated_caption = caption_run.outputs.final_output.value.caption
+            generated_tweet = (
+                caption_run.outputs.final_output.value.tweet_text or generated_caption
+            )
+
+            print(f"\nNew Generated Instagram Caption:")
+            print(generated_caption)
+            if channels in ["twitter", "both"]:
+                print(f"\nNew Generated Tweet Text:")
+                print(generated_tweet)
+        else:
+            print("Please enter 'yes', 'no', or 'regenerate'")
+
+    # Post to social media
+    print(f"\nPosting to {channels}...")
+
+    posting_payload = {
+        "channels": channels,
+        "caption": generated_caption,
+        "tweet_text": generated_tweet if channels in ["twitter", "both"] else "",
+        "image_url": chosen_url,
+    }
+
+    social_plan = portia.plan(
+        f"""
+        Post the image to social media using the Make.com integration.
+        
+        Payload:
+        {json.dumps(posting_payload, indent=2)}
+        
+        Use the tool 'portia:mcp:custom:us2.make.com:s2795860_mcp_social_post_ig_x_both'
+        with the exact payload above.
+        """
+    )
+
+    social_run = portia.run_plan(social_plan)
+    print("\nSocial Media Post Result:")
+    print(social_run.outputs.final_output.value)
+
+else:
+    print("No image URLs generated. Cannot proceed with social media posting.")
