@@ -63,7 +63,7 @@ posting_plan_manual = (
           - image_url: string (public URL)
 
         Inputs provided to you:
-          - generate_captions: { channels, caption, tweet_text }  // from previous step
+          - generate_captions: {{ channels, caption, tweet_text }}  // from previous step
           - image_url: string
 
         Mapping rules:

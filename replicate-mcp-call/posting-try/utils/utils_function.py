@@ -5,9 +5,11 @@ from portia import (
     Clarification,
     ClarificationCategory,
     PlanRun,
+    PlanBuilderV2,
+    Input,
 )
-from portia.clarification import UserVerificationClarification
 from typing import Any, Optional
+from utils.schema import PostingResult
 
 
 # def clarify_before_posting(
@@ -54,61 +56,56 @@ SOCIAL_POST_TOOL_ID = (
 # -----------------------------
 # Execution Hook: before_tool_call
 # -----------------------------
-# Raise a USER_VERIFICATION clarification right before calling the Make.com tool.
-def clarify_before_social_post(tool, args: dict[str, Any], plan_run, step):
-    """
-    If the upcoming tool call is the Make.com social-post tool, raise a
-    USER_VERIFICATION clarification with a tidy preview of what's about to be posted.
-    The run will pause until you manually answer in the console.
-    """
-    if tool.id != SOCIAL_POST_TOOL_ID:
-        return None  # Only intercept our social-post tool
+# # Raise a USER_VERIFICATION clarification right before calling the Make.com tool.
+# def clarify_before_social_post(tool, args: dict[str, Any], plan_run, step):
+#     """
+#     If the upcoming tool call is the Make.com social-post tool, raise a
+#     USER_VERIFICATION clarification with a tidy preview of what's about to be posted.
+#     The run will pause until you manually answer in the console.
+#     """
+#     if tool.id != SOCIAL_POST_TOOL_ID:
+#         return None  # Only intercept our social-post tool
 
-    # If there is already a USER_VERIFICATION clarification for this step and it's resolved,
-    # decide based on the user's prior answer.
-    previous = plan_run.get_clarification_for_step(
-        ClarificationCategory.USER_VERIFICATION
-    )
-    if previous and previous.resolved:
-        verdict = str(previous.response or "").strip().lower()
-        if verdict in {"y", "yes", "ok", "approve", "approved", "✅", "👍"}:
-            return None  # proceed with tool call
-        # If the user rejected, hard-stop the tool to avoid accidental posting
-        raise ToolHardError(
-            f"User rejected tool call to {tool.name} with args {args!r}"
-        )
+#     # If there is already a USER_VERIFICATION clarification for this step and it's resolved,
+#     # decide based on the user's prior answer.
+#     previous = plan_run.get_clarification_for_step(
+#         ClarificationCategory.USER_VERIFICATION
+#     )
+#     if previous and previous.resolved:
+#         verdict = str(previous.response or "").strip().lower()
+#         if verdict in {"y", "yes", "ok", "approve", "approved", "✅", "👍"}:
+#             return None  # proceed with tool call
+#         # If the user rejected, hard-stop the tool to avoid accidental posting
+#         raise ToolHardError(
+#             f"User rejected tool call to {tool.name} with args {args!r}"
+#         )
 
-    # Otherwise, raise a new clarification (run will pause here).
-    ig_caption = args.get("caption")
-    tweet_text = args.get("tweet_text")
-    image_url = args.get("image_url")
+#     # Otherwise, raise a new clarification (run will pause here).
+#     ig_caption = args.get("caption")
+#     tweet_text = args.get("tweet_text")
+#     image_url = args.get("image_url")
 
-    guidance = (
-        "Generated content:\n\n"
-        f"Instagram caption: {ig_caption}\n"
-        f"Twitter text: {tweet_text}\n"
-        f"Image URL: {image_url}\n\n"
-        "Do you approve this? (yes/no). If 'no', you can type your revised caption/tweet text instead."
-    )
+#     guidance = (
+#         "Generated content:\n\n"
+#         f"Instagram caption: {ig_caption}\n"
+#         f"Twitter text: {tweet_text}\n"
+#         f"Image URL: {image_url}\n\n"
+#         "Do you approve this? (yes/no). If 'no', you can type your revised caption/tweet text instead."
+#     )
 
-    return UserVerificationClarification(
-        plan_run_id=plan_run.id,
-        user_guidance=guidance,
-    )
+#     return UserVerificationClarification(
+#         plan_run_id=plan_run.id,
+#         user_guidance=guidance,
+#     )
 
 
 # -----------------------------
 # Manual clarification handling
 # -----------------------------
-def handle_outstanding_clarifications(run, portia_instance) -> Any:
+def handle_outstanding_clarifications(run, portia_instance):
     """
-    Loop while there are outstanding clarifications.
-    For USER_VERIFICATION:
-      - 'yes'/'y' approves and we resume.
-      - Anything else is treated as a rejection *or* as revised text:
-        - If it looks like a short "no", we cancel posting (by answering 'no').
-        - Otherwise, we treat the response as replacement text for caption/tweet.
-          We store it back as the clarification's answer (the hook can read it on resume).
+    Loop while there are outstanding clarifications and take user input.
+    Any non-'yes' answer is passed as the edit instruction, which the hook will apply.
     """
     safety = 0
     while True:
@@ -154,7 +151,21 @@ def handle_outstanding_clarifications(run, portia_instance) -> Any:
         # Resume the plan (SDKs vary; try both)
         run = _resume_plan_run(run, portia_instance)
 
-        # Loop again in case new clarifications are raised on resume
+
+def _resume_plan_run(run, portia_instance):
+    cont = getattr(portia_instance, "continue_plan", None)
+    if callable(cont):
+        try:
+            return cont(plan_id=run.plan.id, plan_run_id=run.id)
+        except Exception:
+            pass
+    resume_fn = getattr(portia_instance, "resume", None)
+    if callable(resume_fn):
+        try:
+            return resume_fn(run)
+        except Exception:
+            pass
+    return run
 
 
 def _resume_plan_run(run, portia_instance) -> Any:
@@ -176,4 +187,60 @@ def _resume_plan_run(run, portia_instance) -> Any:
 def safe_final_value(run) -> Optional[Any]:
     return getattr(
         getattr(getattr(run, "outputs", None), "final_output", None), "value", None
+    )
+
+
+# -------------------------
+# Edit-plan (LLM transformer)
+# -------------------------
+def build_edit_transform_plan():
+    """
+    A tiny LLM plan that ONLY updates the field(s) implied by `channels`,
+    and leaves all other fields exactly as-is.
+    Output schema: PostingResult (channels, caption, tweet_text)
+    """
+    return (
+        PlanBuilderV2(
+            "Transform social text per user instruction with strict field bounds"
+        )
+        .input(name="channels", description="instagram | twitter | both")
+        .input(name="caption", description="Current Instagram caption (can be null)")
+        .input(name="tweet_text", description="Current Twitter text (can be null)")
+        .input(name="instruction", description="User-provided change request")
+        .llm_step(
+            step_name="apply_edits",
+            task="""
+You will receive:
+- channels: "instagram" | "twitter" | "both"
+- caption: current caption (nullable)
+- tweet_text: current tweet text (nullable)
+- instruction: user's requested changes
+
+Rules:
+1) If channels == "instagram": 
+   - Update ONLY `caption` according to the instruction.
+   - Leave `tweet_text` unchanged (return the original value).
+2) If channels == "twitter":
+   - Update ONLY `tweet_text` according to the instruction.
+   - Leave `caption` unchanged (return the original value).
+3) If channels == "both":
+   - Decide which field(s) the user intended from the instruction:
+       * If the instruction mentions "tweet", "twitter", or "X", update ONLY tweet_text.
+       * If it mentions "caption", "insta", or "instagram", update ONLY caption.
+       * If it's ambiguous or generic (e.g., "make it cuter"), update BOTH fields consistently.
+   - Do NOT change 'channels'.
+4) Do not add hashtags if the user said not to. Preserve tone requests (e.g., "good morning").
+5) Strictly preserve any field you are not tasked to change.
+6) Return a PostingResult with the final channels, caption, and tweet_text.
+            """,
+            inputs=[
+                Input("channels"),
+                Input("caption"),
+                Input("tweet_text"),
+                Input("instruction"),
+            ],
+            output_schema=PostingResult,
+        )
+        .final_output(output_schema=PostingResult)
+        .build()
     )
