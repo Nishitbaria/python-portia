@@ -405,7 +405,7 @@ def poll_prediction_until_complete(
             .invoke_tool_step(
                 tool="portia:mcp:custom:mcp.replicate.com:get_predictions",
                 args={
-                    "id": prediction_id,
+                    "prediction_id": prediction_id,
                 },
                 step_name="get_prediction_status",
             )
@@ -968,6 +968,17 @@ def main():
             print("\n✅ UGC Generation Complete!")
             print("Final UGC Result:")
             print(final_ugc_result)
+            
+            # Extract output URL
+            if isinstance(final_ugc_result, list) and len(final_ugc_result) > 0:
+                result_item = final_ugc_result[0]
+                if isinstance(result_item, dict) and 'output' in result_item:
+                    output_url = result_item['output']
+                    print(f"\n🎥 Generated Video URL: {output_url}")
+                else:
+                    print("\n⚠️ Could not find output URL in result")
+            else:
+                print("\n⚠️ Unexpected result format for URL extraction")
         else:
             print("\n❌ UGC Generation failed or timed out")
     else:
