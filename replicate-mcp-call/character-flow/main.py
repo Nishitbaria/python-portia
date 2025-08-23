@@ -1,10 +1,9 @@
-from portia import (
-    PlanBuilderV2,
-    StepOutput,
-    Input,
-)
+from portia import PlanBuilderV2
+from portia.builder.reference import StepOutput, Input
 from pydantic import BaseModel
 from utils.config import portia
+import json
+
 
 # Predefined character URLs
 prebuild_character_urls = [
@@ -69,40 +68,139 @@ def join_array_to_string(array_output):
         return str(array_output)
 
 
+# def extract_and_join_text_content(json_output):
+#     """Extract and join text content from complex JSON structure"""
+#     try:
+#         import json
+
+#         if isinstance(json_output, str):
+#             data = json.loads(json_output)
+#         else:
+#             data = json_output
+
+#         # Navigate through the JSON structure to find text content
+#         if isinstance(data, dict):
+#             # Check for the wrapped structure from single_tool_agent_step
+#             if "content" in data and isinstance(data["content"], list):
+#                 text_parts = []
+#                 for item in data["content"]:
+#                     if isinstance(item, dict) and "text" in item:
+#                         text_content = item["text"]
+#                         # Parse the text content if it's a JSON string
+#                         try:
+#                             parsed_text = json.loads(text_content)
+#                             if isinstance(parsed_text, list):
+#                                 # Filter out empty strings and join
+#                                 filtered_parts = [
+#                                     str(part)
+#                                     for part in parsed_text
+#                                     if part and str(part).strip()
+#                                 ]
+#                                 text_parts.extend(filtered_parts)
+#                             else:
+#                                 text_parts.append(str(parsed_text))
+#                         except json.JSONDecodeError:
+#                             # If not JSON, treat as plain text
+#                             if text_content.strip():
+#                                 text_parts.append(text_content)
+#                 return " ".join(text_parts)
+#             elif "text" in data:
+#                 return data["text"]
+#             elif "output" in data:
+#                 # Direct output field
+#                 output = data["output"]
+#                 if isinstance(output, list):
+#                     return " ".join([str(item) for item in output if item])
+#                 return str(output)
+
+#         # Fallback: convert to string
+#         return str(json_output)
+#     except Exception as e:
+#         print(f"Error extracting text content: {e}")
+#         # If any error occurs, return the original as string
+#         return str(json_output)
+
+
 def extract_and_join_text_content(json_output):
     """Extract and join text content from complex JSON structure"""
+    print(f"[DEBUG] Input json_output type: {type(json_output)}")
+    print(f"[DEBUG] Input json_output: {json_output}")
+    print(f"[DEBUG] Function called with: {json_output}")
+
     try:
-        import json
+        print("Extracting and joining text content", json_output)
 
         if isinstance(json_output, str):
+            print("[DEBUG] Input is string, parsing JSON...")
             data = json.loads(json_output)
+            print(f"[DEBUG] Parsed data type: {type(data)}")
         else:
+            print("[DEBUG] Input is not string, using as-is")
             data = json_output
+            print(f"[DEBUG] Data type: {type(data)}")
 
         # Navigate through the JSON structure to find text content
         if isinstance(data, dict):
+            print(f"[DEBUG] Data is dict with keys: {list(data.keys())}")
+
             if "content" in data and isinstance(data["content"], list):
+                print(f"[DEBUG] Found 'content' list with {len(data['content'])} items")
                 text_parts = []
-                for item in data["content"]:
+                for i, item in enumerate(data["content"]):
+                    print(f"[DEBUG] Processing content item {i}: {type(item)} - {item}")
                     if isinstance(item, dict) and "text" in item:
                         text_content = item["text"]
+                        print(f"[DEBUG] Found 'text' in item {i}: {text_content}")
                         # Parse the text content if it's a JSON string
                         try:
                             parsed_text = json.loads(text_content)
+                            print(
+                                f"[DEBUG] Successfully parsed text as JSON: {type(parsed_text)} - {parsed_text}"
+                            )
                             if isinstance(parsed_text, list):
-                                text_parts.extend(parsed_text)
+                                # Join the array of strings into a single string
+                                joined_text = "".join(parsed_text)
+                                print(
+                                    f"[DEBUG] Joined array into string: {joined_text}"
+                                )
+                                text_parts.append(joined_text)
+                                print(
+                                    f"[DEBUG] Added joined text to text_parts, current length: {len(text_parts)}"
+                                )
                             else:
                                 text_parts.append(str(parsed_text))
-                        except json.JSONDecodeError:
+                                print(
+                                    f"[DEBUG] Added string to text_parts, current length: {len(text_parts)}"
+                                )
+                        except json.JSONDecodeError as e:
+                            print(f"[DEBUG] JSON decode error for text content: {e}")
                             text_parts.append(text_content)
-                return " ".join(text_parts)
+                            print(
+                                f"[DEBUG] Added raw text to text_parts, current length: {len(text_parts)}"
+                            )
+                    else:
+                        print(f"[DEBUG] Item {i} is not a dict with 'text' key")
+
+                result = " ".join(text_parts)
+                print(f"[DEBUG] Final result from content list: {result}")
+                print(f"[OUTPUT] {result}")
+                return result
             elif "text" in data:
+                print(f"[DEBUG] Found 'text' key directly in data: {data['text']}")
+                print(f"[OUTPUT] {data['text']}")
                 return data["text"]
+            else:
+                print("[DEBUG] No 'content' list or 'text' key found in dict")
 
         # Fallback: convert to string
+        print(f"[DEBUG] Using fallback - converting to string: {str(json_output)}")
+        print(f"[OUTPUT] {str(json_output)}")
         return str(json_output)
     except Exception as e:
         # If any error occurs, return the original as string
+        print(f"[DEBUG] Exception occurred: {e}")
+        print(f"[DEBUG] Returning original as string: {str(json_output)}")
+        print(f"[OUTPUT] {str(json_output)}")
         return str(json_output)
 
 
@@ -130,19 +228,49 @@ def parse_ugc_prediction(raw: object) -> dict:
     Accepts either a dict with content/text, or a JSON string, and returns a dict.
     """
     try:
-        # Reuse existing extractor to get inner text if wrapped
-        text = extract_and_join_text_content(raw)
-        import json
-        data = json.loads(text) if isinstance(text, str) else text
-        if isinstance(data, dict):
-            result = {}
-            if "id" in data:
-                result["id"] = data["id"]
-            if "status" in data:
-                result["status"] = data["status"]
-            return result
+        # Handle the complex nested structure from single_tool_agent_step
+        if isinstance(raw, dict):
+            # Check if it's the wrapped structure
+            if "content" in raw and isinstance(raw["content"], list):
+                for item in raw["content"]:
+                    if isinstance(item, dict) and "text" in item:
+                        try:
+                            data = json.loads(item["text"])
+                            if isinstance(data, dict):
+                                result = {}
+                                if "id" in data:
+                                    result["id"] = data["id"]
+                                if "status" in data:
+                                    result["status"] = data["status"]
+                                return result
+                        except json.JSONDecodeError:
+                            continue
+            # Direct dict with id/status
+            elif "id" in raw or "status" in raw:
+                result = {}
+                if "id" in raw:
+                    result["id"] = raw["id"]
+                if "status" in raw:
+                    result["status"] = raw["status"]
+                return result
+
+        # Try as string
+        if isinstance(raw, str):
+            try:
+                data = json.loads(raw)
+                if isinstance(data, dict):
+                    result = {}
+                    if "id" in data:
+                        result["id"] = data["id"]
+                    if "status" in data:
+                        result["status"] = data["status"]
+                    return result
+            except json.JSONDecodeError:
+                pass
+
         return {}
-    except Exception:
+    except Exception as e:
+        print(f"Error parsing UGC prediction: {e}")
         return {}
 
 
@@ -169,23 +297,92 @@ def get_custom_dialog():
         print("Dialog cannot be empty. Please enter a valid dialog.")
 
 
-def extract_id_and_status(result):
-    """Extract prediction ID and status from Replicate result"""
+def extract_id_and_status(value):
+    """Robustly extract prediction id and status from various shapes.
+
+    Handles:
+    - dicts with id/status
+    - strings containing JSON
+    - single_tool_agent_step wrapped dict: { content: [{ text: "{\"id\":..., \"status\":...}" }] }
+    - fallback regex over string representation
+    """
+    import json, re
+
+    print(f"[DEBUG] extract_id_and_status input type: {type(value)}")
+    print(f"[DEBUG] extract_id_and_status input value: {value}")
+
+    # 1) Wrapped structure from single_tool_agent_step
     try:
-        if isinstance(result, str):
-            import json
+        print(f"[DEBUG] Checking if wrapped structure...")
+        if (
+            isinstance(value, dict)
+            and "content" in value
+            and isinstance(value["content"], list)
+        ):
+            print(
+                f"[DEBUG] Found wrapped structure with {len(value['content'])} content items"
+            )
+            for i, item in enumerate(value["content"]):
+                print(f"[DEBUG] Content item {i}: {item}")
+                if isinstance(item, dict) and "text" in item:
+                    print(f"[DEBUG] Found text in item {i}: {item['text']}")
+                    try:
+                        inner = json.loads(item["text"])
+                        print(f"[DEBUG] Parsed inner JSON: {inner}")
+                        if isinstance(inner, dict):
+                            pred_id = inner.get("id")
+                            status = inner.get("status")
+                            print(
+                                f"[DEBUG] Extracted pred_id={pred_id}, status={status}"
+                            )
+                            if pred_id or status:
+                                print(f"[DEBUG] Returning: ({pred_id}, {status})")
+                                return pred_id, status
+                    except json.JSONDecodeError as e:
+                        print(f"[DEBUG] JSON decode error: {e}")
+                        continue
+    except Exception as e:
+        print(f"[DEBUG] Exception in wrapped structure check: {e}")
+        pass
 
-            data = json.loads(result)
-        else:
-            data = result
-
-        if isinstance(data, dict):
-            prediction_id = data.get("id")
-            status = data.get("status")
-            return prediction_id, status
-
-        return None, None
+    # 2) Direct dict
+    try:
+        if isinstance(value, dict):
+            pred_id = value.get("id")
+            status = value.get("status")
+            if pred_id or status:
+                return pred_id, status
     except Exception:
+        pass
+
+    # 3) String → JSON
+    try:
+        if isinstance(value, str):
+            try:
+                data = json.loads(value)
+                if isinstance(data, dict):
+                    pred_id = data.get("id")
+                    status = data.get("status")
+                    if pred_id or status:
+                        return pred_id, status
+            except json.JSONDecodeError:
+                pass
+    except Exception:
+        pass
+
+    # 4) Fallback: regex over string form
+    try:
+        text_val = str(value)
+        print(f"[DEBUG] Trying regex fallback on: {text_val}")
+        m_id = re.search(r"\bid\"?[:=]\s*['\"]?([a-zA-Z0-9_-]{8,})", text_val)
+        m_status = re.search(r"\bstatus\"?[:=]\s*['\"]?([a-zA-Z]+)", text_val)
+        pred_id = m_id.group(1) if m_id else None
+        status = m_status.group(1) if m_status else None
+        print(f"[DEBUG] Regex extracted pred_id={pred_id}, status={status}")
+        return pred_id, status
+    except Exception as e:
+        print(f"[DEBUG] Exception in regex fallback: {e}")
+        print(f"[DEBUG] Final fallback: returning (None, None)")
         return None, None
 
 
@@ -267,7 +464,7 @@ RULES
 3) Line 2 = Visuals only: material, color, finish, label, cap/closure, shape/size vibes, lighting/background.
 4) Never include benefits, ingredients, numbers, SPF, pH, "ideal for…", or claims like hydrates, nourishes, protects, glow, non-greasy, etc.
 5) No invented brand names. If none is visible, do not fabricate one.
-6) Keep each line concise (~8–16 words). Use commas sparingly; no emojis.
+6) Keep each line concise (~8-16 words). Use commas sparingly; no emojis.
 
 DISALLOWED WORDS (unless explicitly provided as text on pack): hydrates, nourishes, protects, brightens, repairs, SPF, pH-balanced, dermatologist, results, glow, non-greasy, for all skin types, makeup-ready, dewy.
 
@@ -305,34 +502,31 @@ INPUTS
 OUTPUT RULES
 1) Output EXACTLY 2 sentences on separate lines; speakable in ~10 seconds total (≈18–28 words combined).
 2) Sentence 1 = quick hook + brand/product mention (once).
-3) Sentence 2 = 1–2 concrete attributes/benefits pulled from the prompt; add a soft CTA only if `include_cta=true`.
+3) Sentence 2 = 1-2 concrete attributes/benefits pulled from the prompt; add a soft CTA only if `include_cta=true`.
 4) Do NOT invent claims, numbers, SPF, ingredients, or certifications. No filler like "for all skin types," "pH-balanced," etc., unless explicitly present in the prompt.
 5) Keep language simple, first-person creator by default (switch to narrator if `voice="narrator"`). No emojis/hashtags.
 
 PROMPT PARSING
 - If plain text, extract brand/product/type/finish/benefits from the text.
-- If JSON, read these fields when present:
-  {
-    "brand": "string",
-    "product_name": "string",
-    "type": "sunscreen|serum|face wash|...",
-    "finish_or_feel": ["lightweight","fast-absorbing","matte","soft glow", ...],
-    "key_benefits": ["daily protection","hydrates","softens", ...],
-    "notes": ["no white cast","fragrance-free"],
-    "voice": "creator|narrator",
-    "tone": "casual|luxury-minimal|clinical",
-    "include_cta": true|false,
-    "cta": "Tap to try|Shop now|Link in bio",
-    "language": "en|hi|..."
-  }
-
+- IF JSON then extract the text field from the content array of the first element
+- Example 
 STYLE
 - Friendly UGC tone, concise, present tense. Prefer one texture word + one benefit.
-- Brand mention once; keep ~9–14 words per sentence.
+- Brand mention once; keep ~9-14 words per sentence.
 
 FORMAT
 Return ONLY the two sentences on separate lines no titles, bullets, or quotes.
 """
+
+
+def join_array_to_string(array_output):
+    """Join array output from Replicate into single string"""
+    if isinstance(array_output, list):
+        return " ".join(array_output)
+    elif isinstance(array_output, str):
+        return array_output
+    else:
+        return str(array_output)
 
 
 def pack_final_output(
@@ -340,14 +534,24 @@ def pack_final_output(
     product_url: str,
     product_description: str,
     dialog: str,
-    ugc_prediction: dict,
+    ugc_prediction,
 ) -> dict:
+    # Extract ID and status from the raw ugc_prediction response
+    print(
+        f"[PACK DEBUG] Received ugc_prediction: {ugc_prediction} (type: {type(ugc_prediction)})"
+    )
+    prediction_id, status = extract_id_and_status(ugc_prediction)
+    print(f"[PACK DEBUG] Extracted prediction_id={prediction_id}, status={status}")
+
     return {
         "character_url": character_url,
         "product_url": product_url,
         "product_description": product_description,
         "dialog": dialog,
-        "ugc_prediction": ugc_prediction,
+        "ugc_prediction": {
+            "id": prediction_id,
+            "status": status,
+        },
     }
 
 
@@ -376,6 +580,32 @@ def extract_avatar_url(result: object, original_url: str, choice: str) -> str:
         return original_url
     except Exception:
         return original_url
+
+
+class UGC_Prediction(BaseModel):
+    """UGC Prediction model"""
+
+    product_description: str
+    dialog: str
+    character_url: str
+    product_url: str
+    id: str
+    status: str
+
+
+def extract_id_and_status_vinayak_way(raw):
+    print("Vinayak", raw)
+    print("Vinayak", type(raw))
+    textObject = raw["content"][0]["text"]
+    print("Vinayak", textObject)
+    print("Vinayak", type(textObject))
+    textObject = json.loads(textObject)
+    print("Vinayak", textObject)
+    print("Vinayak", type(textObject))
+    print("Vinayak", textObject["id"])
+    print("Vinayak", textObject["status"])
+    print("Vinayak", textObject["id"], textObject["status"])
+    return textObject
 
 
 # Build the plan using PlanBuilderV2
@@ -476,33 +706,49 @@ plan = (
     .single_tool_agent_step(
         tool="portia:mcp:custom:mcp.replicate.com:create_predictions",
         task="""
-        Generate a product description using Claude-4-Sonnet on Replicate. Use the provided system prompt and product image URL to create a detailed product description.
-        Always include:
-        - version = "anthropic/claude-4-sonnet"
-        - input.prompt = "Your Task it To Generate Product description in 2 lines, Brand Name"
-        - input.system_prompt = [The detailed system prompt for product description]
-        - input.image = [product image URL]
-        - jq_filter = ".output"
-        - Prefer = "wait"
+        CRITICAL: You MUST include ALL required parameters in your tool call.
+
+        Call the tool with this EXACT structure:
+        {
+          "version": "openai/gpt-4o",
+          "input": {
+            "prompt": "Write Prompt for this product",
+            "system_prompt": [use the system_prompt input],
+            "image_input": [[use the product_url input]]
+          },
+          "jq_filter": ".output",
+          "Prefer": "wait"
+        }
+
+        DO NOT OMIT THE "version" FIELD. It is required and must be "openai/gpt-4o".
+        THE Image input must be a list with the product url as the first element.
+        Return array with text field from first element of content array only
         """,
         inputs=[Input("product_url"), Input("system_prompt")],
         step_name="generate_product_description",
     )
     .function_step(
-        function=extract_and_join_text_content,
-        args={"json_output": StepOutput("generate_product_description")},
+        function=join_array_to_string,
+        args={"array_output": StepOutput("generate_product_description")},
         step_name="format_product_description",
     )
     .single_tool_agent_step(
         tool="portia:mcp:custom:mcp.replicate.com:create_predictions",
         task="""
-        Generate a UGC dialog using Claude-4-Sonnet on Replicate. Use the provided system prompt and product description to create a natural, creator-style dialogue.
-        Always include:
-        - version = "anthropic/claude-4-sonnet"
-        - input.prompt = [The product description from previous step]
-        - input.system_prompt = [The dialog generation system prompt]
-        - jq_filter = ".output"
-        - Prefer = "wait"
+        CRITICAL: You MUST include ALL required parameters in your tool call.
+
+        Call the tool with this EXACT structure:
+        {
+          "version": "openai/gpt-4o",
+          "input": {
+            "prompt": [use the format_product_description output],
+            "system_prompt": [use the dialog_system_prompt input]
+          },
+          "jq_filter": ".output",
+          "Prefer": "wait"
+        }
+
+        DO NOT OMIT THE "version" FIELD. It is required and must be "openai/gpt-4o".
         """,
         inputs=[
             StepOutput("format_product_description"),
@@ -529,18 +775,28 @@ plan = (
     .single_tool_agent_step(
         tool="portia:mcp:custom:mcp.replicate.com:create_predictions",
         task="""
-        Call the UGC ads generator model with the following inputs:
-        - version: 1fb1d9f3ffb5da9774c24ce528c54c916d8d6cd63af866fe2afe85e44fb99999
-        - input.avatar_image: The processed character URL (from character_url_final step)
-        - input.product_image: The product image URL  
-        - input.product_description: The generated product description
-        - input.dialogs: The generated or custom dialog
-        - input.debug_mode: true
-        - Prefer: wait=5
+        CRITICAL: You MUST include ALL required parameters in your tool call with the EXACT mapping specified below.
         
-        - jq_filter: "{id: .id, status: .status}"
-        
-        This will generate a UGC video using the provided character, product, description, and dialog.
+        IMPORTANT: Do NOT mix up product_description and dialogs parameters. They are different:
+        - product_description: Should contain the formatted product description (what the product IS and how it LOOKS)
+        - dialogs: Should contain the dialog text (what the person SAYS in the video)
+
+        Call the tool with this EXACT structure and parameter mapping:
+        {
+          "version": "1fb1d9f3ffb5da9774c24ce528c54c916d8d6cd63af866fe2afe85e44fb99999",
+          "input": {
+            "avatar_image": [use the character_url_final output - this is the character/avatar image URL],
+            "product_image": [use the product_url input - this is the product image URL],
+            "product_description": [use the format_product_description output - this describes what the product is and looks like],
+            "dialogs": [use the format_dialog output - this is what the person says in the video],
+            "debug_mode": true
+          },
+          "jq_filter": "{id: .id, status: .status}",
+          "Prefer": "wait=5"
+        }
+                
+        DO NOT OMIT THE "version" FIELD. It is required.
+        DOUBLE CHECK: product_description gets the product description, dialogs gets the dialog text.
         """,
         inputs=[
             StepOutput("character_url_final"),
@@ -550,24 +806,38 @@ plan = (
         ],
         step_name="generate_ugc",
     )
-    .function_step(
-        function=parse_ugc_prediction,
-        args={"raw": StepOutput("generate_ugc")},
-        step_name="ugc_prediction_parsed",
-    )
-    .function_step(
-        function=pack_final_output,
-        args={
-            "character_url": StepOutput("character_url_final"),
-            "product_url": Input("product_url"),
-            "product_description": StepOutput("format_product_description"),
-            "dialog": StepOutput("format_dialog"),
-            "ugc_prediction": StepOutput("ugc_prediction_parsed"),
-        },
-        step_name="pack_final_output",
+    .llm_step(
+        task="""
+        You will receive the output from the previous step which contains the UGC generation response.
+        
+        The response will be in this format:
+        {"meta":null,"content":[{"type":"text","text":"{\\"id\\":\\"ej30c7shdxrme0crv0pr0fm8ag\\",\\"status\\":\\"starting\\"}"}]}
+        
+        Your task is to:
+        1. Extract the JSON from content[0].text
+        2. Parse it to get the id and status
+        3. Create a structured object with ALL these fields:
+           - product_description: [use the format_product_description output]
+           - dialog: [use the format_dialog output] 
+           - character_url: [use the character_url_final output]
+           - product_url: [use the product_url input]
+           - id: [extracted from the UGC response]
+           - status: [extracted from the UGC response]
+        
+        Return ONLY the structured object with these 6 fields.
+        """,
+        inputs=[
+            StepOutput("generate_ugc"),
+            StepOutput("format_product_description"),
+            StepOutput("format_dialog"),
+            StepOutput("character_url_final"),
+            Input("product_url"),
+        ],
+        step_name="pack_final_output_llm",
+        output_schema=UGC_Prediction,
     )
     .final_output(
-        output_schema=FinalOutput,
+        output_schema=UGC_Prediction,
     )
     .build()
 )
@@ -656,43 +926,45 @@ def main():
     # Display results
     print("\n🎉 Plan execution complete!")
     final_output = plan_run.outputs.final_output.value
+    print(f"Raw final output: {final_output}")
+    print(f"Final output type: {type(final_output)}")
 
-    # Handle both string and dictionary outputs
-    if isinstance(final_output, str):
-        print(f"Final Output (string): {final_output}")
-        return final_output
+    # Extract prediction ID and status from structured output
+    if hasattr(final_output, "id") and hasattr(final_output, "status"):
+        # Pydantic model with id and status attributes
+        prediction_id = final_output.id
+        prediction_status = final_output.status
     elif isinstance(final_output, dict):
-        print(f"Character URL: {final_output.get('character_url', 'N/A')}")
-        print(f"Product URL: {final_output.get('product_url', 'N/A')}")
-        print(f"Product Description: {final_output.get('product_description', 'N/A')}")
-        print(f"Dialog: {final_output.get('dialog', 'N/A')}")
-
-        # Extract UGC prediction ID and status
-        ugc_prediction = final_output.get("ugc_prediction", {})
-        prediction_id, prediction_status = extract_id_and_status(ugc_prediction)
-
-        if prediction_id:
-            print(f"\n🎬 UGC Generation Started:")
-            print(f"Prediction ID: {prediction_id}")
-            print(f"Status: {prediction_status}")
-
-            # Poll for completion
-            print("\n⏳ Polling for UGC generation completion...")
-            final_ugc_result = poll_prediction_until_complete(portia, prediction_id)
-
-            if final_ugc_result:
-                print("\n✅ UGC Generation Complete!")
-                print("Final UGC Result:")
-                print(final_ugc_result)
-            else:
-                print("\n❌ UGC Generation failed or timed out")
-        else:
-            print("\n❌ Could not extract prediction ID from UGC generation result")
-
-        return final_output
+        # Dict with id and status keys
+        prediction_id = final_output.get("id")
+        prediction_status = final_output.get("status")
     else:
-        print(f"Final Output (unknown type): {final_output}")
-        return final_output
+        # Fallback: try to extract from string representation
+        prediction_id, prediction_status = extract_id_and_status(final_output)
+
+    print(f"Extracted prediction_id: {prediction_id}")
+    print(f"Extracted prediction_status: {prediction_status}")
+
+    if prediction_id:
+        print(f"\n🎬 UGC Generation Started:")
+        print(f"Prediction ID: {prediction_id}")
+        print(f"Status: {prediction_status}")
+
+        # Poll for completion
+        print("\n⏳ Polling for UGC generation completion...")
+        final_ugc_result = poll_prediction_until_complete(portia, prediction_id)
+
+        if final_ugc_result:
+            print("\n✅ UGC Generation Complete!")
+            print("Final UGC Result:")
+            print(final_ugc_result)
+        else:
+            print("\n❌ UGC Generation failed or timed out")
+    else:
+        print("\n❌ Could not extract prediction ID from UGC generation result")
+        print(f"Final output object: {final_output}")
+
+    return final_output
 
 
 if __name__ == "__main__":
