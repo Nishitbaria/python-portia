@@ -9,28 +9,29 @@ from portia import (
     LogLevel,
 )
 from portia.execution_hooks import ExecutionHooks
+from .streaming_hooks import create_streaming_hooks
 
 # from utils.hooks import pass
 
 
 load_dotenv()
-ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 ACCOUNT_ID = os.getenv("MAKE_DOT_COM_ACCOUNT_ID")
 
-anthropic_config = Config.from_default(
-    llm_provider=LLMProvider.ANTHROPIC,
-    default_model="anthropic/claude-3-7-sonnet-latest",
-    anthropic_api_key=ANTHROPIC_API_KEY,
+openai_config = Config.from_default(
+    llm_provider=LLMProvider.OPENAI,
+    default_model="openai/gpt-4o",
+    anthropic_api_key=OPENAI_API_KEY,
     storage_class=StorageClass.CLOUD,
     log_level=LogLevel.DEBUG,
 )
 
 
 portia = Portia(
-    config=anthropic_config,
-    execution_hooks=ExecutionHooks(),
+    config=openai_config,
+    execution_hooks=create_streaming_hooks("plan_stream.json"),
     tools=(
-        PortiaToolRegistry(config=anthropic_config)
+        PortiaToolRegistry(config=openai_config)
         .with_tool_description(
             "portia:mcp:custom:mcp.replicate.com:create_predictions",
             """

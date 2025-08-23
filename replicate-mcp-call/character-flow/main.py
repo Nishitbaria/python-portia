@@ -125,6 +125,27 @@ def pick_first_url(value: object) -> str:
         return str(value)
 
 
+def parse_ugc_prediction(raw: object) -> dict:
+    """Parse single_tool_agent_step wrapped content into a dict {id, status}.
+    Accepts either a dict with content/text, or a JSON string, and returns a dict.
+    """
+    try:
+        # Reuse existing extractor to get inner text if wrapped
+        text = extract_and_join_text_content(raw)
+        import json
+        data = json.loads(text) if isinstance(text, str) else text
+        if isinstance(data, dict):
+            result = {}
+            if "id" in data:
+                result["id"] = data["id"]
+            if "status" in data:
+                result["status"] = data["status"]
+            return result
+        return {}
+    except Exception:
+        return {}
+
+
 def get_dialog_choice():
     """Get user's choice for dialog generation"""
     print("\n=== Dialog Generation ===")
@@ -530,13 +551,18 @@ plan = (
         step_name="generate_ugc",
     )
     .function_step(
+        function=parse_ugc_prediction,
+        args={"raw": StepOutput("generate_ugc")},
+        step_name="ugc_prediction_parsed",
+    )
+    .function_step(
         function=pack_final_output,
         args={
             "character_url": StepOutput("character_url_final"),
             "product_url": Input("product_url"),
             "product_description": StepOutput("format_product_description"),
             "dialog": StepOutput("format_dialog"),
-            "ugc_prediction": StepOutput("generate_ugc"),
+            "ugc_prediction": StepOutput("ugc_prediction_parsed"),
         },
         step_name="pack_final_output",
     )
