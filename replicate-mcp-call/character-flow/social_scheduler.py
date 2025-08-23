@@ -1,11 +1,11 @@
 from portia import PlanBuilderV2
 from portia.builder.reference import StepOutput, Input
-from pydantic import BaseModel
-from utils.config import portia
+from pydantic import BaseModel, Field
+from utils.config import get_portia_with_custom_tools
 import json
 from datetime import datetime
 from typing import Optional, Dict, Any
-from portia import MultipleChoiceClarification, InputClarification
+from portia import MultipleChoiceClarification, InputClarification, Tool, ToolRunContext
 
 
 # Pydantic models for the social media scheduler
@@ -32,6 +32,130 @@ class SchedulingData(BaseModel):
     date_time: str  # ISO format in IST
     twitter_post: Optional[str] = None
     channel: str
+
+
+# Schema for ContentValidationTool
+class ContentValidationToolSchema(BaseModel):
+    """Schema for content validation tool input"""
+    
+    instagram_caption: str = Field(..., description="Instagram caption to validate")
+    twitter_post: Optional[str] = Field(None, description="Twitter post to validate (optional)")
+    channel: str = Field(..., description="Target channel(s): instagram, twitter, or both")
+
+
+# Schema for TimeSchedulingTool  
+class TimeSchedulingToolSchema(BaseModel):
+    """Schema for time scheduling tool input"""
+    
+    placeholder: str = Field("trigger", description="Placeholder to trigger time clarification")
+
+
+class ContentValidationTool(Tool[str]):
+    """Tool that validates generated social media content with user clarifications"""
+
+    id: str = "content_validation_tool"
+    name: str = "Content Validation Tool"
+    description: str = "Validates social media content and asks user for approval or changes"
+    args_schema: type[BaseModel] = ContentValidationToolSchema
+    output_schema: tuple[str, str] = ("str", "User's validation decision and any requested changes")
+
+    def run(self, ctx: ToolRunContext, instagram_caption: str, twitter_post: Optional[str] = None, channel: str = "both") -> str | MultipleChoiceClarification | InputClarification:
+        """Run the ContentValidationTool."""
+        
+        # Check if we already have a resolved approval clarification
+        approval_clarification = None
+        for clarification in ctx.clarifications:
+            if (clarification.resolved and 
+                hasattr(clarification, 'options') and 
+                any('Approve' in str(opt) or 'Request changes' in str(opt) for opt in getattr(clarification, 'options', []))):
+                approval_clarification = clarification
+                break
+        
+        # If no approval decision yet, ask for approval
+        if not approval_clarification:
+            content_display = f"""
+🎨 Generated Content:
+📱 Instagram Caption: {instagram_caption}
+"""
+            if twitter_post:
+                content_display += f"🐦 Twitter Post: {twitter_post}\n"
+            content_display += f"📺 Target Channel(s): {channel}"
+            
+            return MultipleChoiceClarification(
+                plan_run_id=ctx.plan_run.id,
+                argument_name="approval_decision",
+                user_guidance=f"{content_display}\n\nDo you approve this content or would you like to make changes?",
+                options=[
+                    "Approve - use this content as is",
+                    "Request changes - I want to modify something"
+                ]
+            )
+        
+        # If user requested changes, ask for specific changes
+        if approval_clarification.response == "Request changes - I want to modify something":
+            # Check if we already have a change request clarification
+            change_clarification = None
+            for clarification in ctx.clarifications:
+                if (clarification.resolved and 
+                    hasattr(clarification, 'user_guidance') and 
+                    'specific changes' in clarification.user_guidance.lower()):
+                    change_clarification = clarification
+                    break
+            
+            if not change_clarification:
+                return InputClarification(
+                    plan_run_id=ctx.plan_run.id,
+                    argument_name="change_request",
+                    user_guidance="What specific changes would you like to make to the content? Please describe what you'd like to modify."
+                )
+            
+            # Return the change request
+            return f"CHANGES_REQUESTED: {change_clarification.response}"
+        
+        # User approved content
+        return "APPROVED: Content approved as is"
+
+
+class TimeSchedulingTool(Tool[str]):
+    """Tool that asks user for scheduling time with clarifications"""
+
+    id: str = "time_scheduling_tool"
+    name: str = "Time Scheduling Tool"
+    description: str = "Asks user for social media post scheduling time"
+    args_schema: type[BaseModel] = TimeSchedulingToolSchema
+    output_schema: tuple[str, str] = ("str", "User's preferred scheduling time in natural language")
+
+    def run(self, ctx: ToolRunContext, placeholder: str = "trigger") -> str | InputClarification:
+        """Run the TimeSchedulingTool."""
+        
+        # Check if we already have a resolved time clarification
+        time_clarification = None
+        for clarification in ctx.clarifications:
+            if (clarification.resolved and 
+                hasattr(clarification, 'user_guidance') and 
+                'schedule' in clarification.user_guidance.lower() and
+                'time' in clarification.user_guidance.lower()):
+                time_clarification = clarification
+                break
+        
+        # If no time decision yet, ask for scheduling time
+        if not time_clarification:
+            return InputClarification(
+                plan_run_id=ctx.plan_run.id,
+                argument_name="scheduling_time",
+                user_guidance="""When would you like to schedule this social media post?
+
+Examples of time formats you can use:
+- "now" - post immediately
+- "tomorrow 3pm" - tomorrow at 3 PM  
+- "tomorrow at 15:30" - tomorrow at 3:30 PM
+- "in 2 hours" - 2 hours from now
+
+Please provide the scheduling time in natural language:"""
+            )
+        
+        # Return the user's time preference
+        return str(time_clarification.response)
 
 
 # System prompts
@@ -183,50 +307,38 @@ social_scheduler_plan = (
 
 
 def create_content_validation_plan(generated_captions: CaptionGeneration):
-    """Create a plan that asks user to validate the generated content"""
-    content_display = f"""
-🎨 Generated Content:
-📱 Instagram Caption: {generated_captions.instagram_caption}
-"""
-
-    if generated_captions.twitter_post:
-        content_display += f"🐦 Twitter Post: {generated_captions.twitter_post}\n"
-
-    content_display += f"📺 Target Channel(s): {generated_captions.channel}"
-
-    validation_plan = portia.plan(f"""
-    {content_display}
-    
-    You need to validate the generated social media content with the user.
-    
-    Show the user the content above and ask them: "Do you approve this content or would you like to make changes?"
-    
-    Wait for their response. If they want changes, ask them what specific changes they would like to make.
-    
-    This should raise a clarification to get user input.
-    """)
+    """Create a plan that asks user to validate the generated content using custom tool"""
+    validation_plan = (
+        PlanBuilderV2("Content Validation")
+        .invoke_tool_step(
+            step_name="validate_content",
+            tool="content_validation_tool",
+            args={
+                "instagram_caption": generated_captions.instagram_caption,
+                "twitter_post": generated_captions.twitter_post,
+                "channel": generated_captions.channel
+            }
+        )
+        .final_output()
+        .build()
+    )
 
     return validation_plan
 
 
 def create_time_scheduling_plan():
     """Create a plan that asks user for scheduling time"""
-    scheduling_plan = portia.plan(
-        """
-    Ask the user when they would like to schedule this social media post.
-    
-    Examples of time formats they can use:
-    - "now" - post immediately
-    - "tomorrow 3pm" - tomorrow at 3 PM
-    - "tomorrow at 15:30" - tomorrow at 3:30 PM
-    - "in 2 hours" - 2 hours from now
-    
-    Ask them to provide the scheduling time in natural language.
-    
-    IMPORTANT: Do NOT call any Google tools or authentication services. 
-    You are only asking for user input, not accessing any external services yet.
-    Simply ask the user for their preferred scheduling time and return their response.
-    """
+    scheduling_plan = (
+        PlanBuilderV2("Time Scheduling")
+        .invoke_tool_step(
+            step_name="schedule_time",
+            tool="time_scheduling_tool",
+            args={
+                "placeholder": "trigger"
+            }
+        )
+        .final_output()
+        .build()
     )
 
     return scheduling_plan
@@ -278,6 +390,9 @@ def create_sheets_integration_plan(final_data: SchedulingData):
 
 def main():
     """Main function for social media scheduler with UGC data"""
+    # Get Portia instance with custom tools
+    portia = get_portia_with_custom_tools()
+    
     print("📱 Welcome to Social Media Scheduler!")
 
     # Get user input
