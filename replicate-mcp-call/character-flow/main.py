@@ -24,6 +24,10 @@ class ProductDescription(BaseModel):
     description: str
 
 
+class DialogOutput(BaseModel):
+    dialog: str
+
+
 class character_url(BaseModel):
     character_url: str
 
@@ -405,7 +409,7 @@ def poll_prediction_until_complete(
                 },
                 step_name="get_prediction_status",
             )
-            .final_output(output_schema=dict)
+            .final_output(output_schema=PredictionStatus)
             .build()
         )
 
@@ -417,27 +421,31 @@ def poll_prediction_until_complete(
 
         result = polling_run.outputs.final_output.value
 
-        # Extract status and output
-        if isinstance(result, dict):
+        # Extract status and output from Pydantic model
+        if hasattr(result, 'status') and hasattr(result, 'output'):
+            status = result.status
+            output = result.output
+        elif isinstance(result, dict):
             status = result.get("status")
             output = result.get("output")
-
-            print(f"Status: {status}")
-
-            if status == "succeeded" and output:
-                print("✅ Prediction completed successfully!")
-                return output
-            elif status in ["failed", "canceled"]:
-                print(f"❌ Prediction failed with status: {status}")
-                return None
-            elif status in ["starting", "processing"]:
-                print(f"⏳ Still processing... (status: {status})")
-                time.sleep(delay_seconds)
-            else:
-                print(f"⚠️ Unknown status: {status}")
-                time.sleep(delay_seconds)
         else:
             print(f"⚠️ Unexpected result format: {result}")
+            time.sleep(delay_seconds)
+            continue
+
+        print(f"Status: {status}")
+
+        if status == "succeeded" and output:
+            print("✅ Prediction completed successfully!")
+            return output
+        elif status in ["failed", "canceled"]:
+            print(f"❌ Prediction failed with status: {status}")
+            return None
+        elif status in ["starting", "processing"]:
+            print(f"⏳ Still processing... (status: {status})")
+            time.sleep(delay_seconds)
+        else:
+            print(f"⚠️ Unknown status: {status}")
             time.sleep(delay_seconds)
 
     print(f"❌ Timed out after {max_attempts} attempts")
@@ -593,6 +601,12 @@ class UGC_Prediction(BaseModel):
     status: str
 
 
+class PredictionStatus(BaseModel):
+    """Model for prediction status polling"""
+    status: str
+    output: list = None
+
+
 def extract_id_and_status_vinayak_way(raw):
     print("Vinayak", raw)
     print("Vinayak", type(raw))
@@ -722,55 +736,51 @@ plan = (
 
         DO NOT OMIT THE "version" FIELD. It is required and must be "openai/gpt-4o".
         THE Image input must be a list with the product url as the first element.
-        Return array with text field from first element of content array only
+        
+        IMPORTANT: Extract the product description text from the array output and return it in this format:
+        {
+          "description": "product description text here"
+        }
         """,
         inputs=[Input("product_url"), Input("system_prompt")],
         step_name="generate_product_description",
-    )
-    .function_step(
-        function=join_array_to_string,
-        args={"array_output": StepOutput("generate_product_description")},
-        step_name="format_product_description",
+        output_schema=ProductDescription,
     )
     .single_tool_agent_step(
         tool="portia:mcp:custom:mcp.replicate.com:create_predictions",
         task="""
-        CRITICAL: You MUST include ALL required parameters in your tool call.
-
-        Call the tool with this EXACT structure:
+        You need to generate the final dialog based on the user's choice:
+        
+        If dialog_choice is "2" (auto generate dialog):
+        - Call GPT-4o with this structure:
         {
           "version": "openai/gpt-4o",
           "input": {
-            "prompt": [use the format_product_description output],
+            "prompt": [use the generate_product_description.description output],
             "system_prompt": [use the dialog_system_prompt input]
           },
           "jq_filter": ".output",
           "Prefer": "wait"
         }
-
-        DO NOT OMIT THE "version" FIELD. It is required and must be "openai/gpt-4o".
+        - Extract the dialog text from the array output
+        
+        If dialog_choice is "1" (custom dialog):
+        - Simply return the custom_dialog input as-is
+        
+        IMPORTANT: Return the final dialog text in this format:
+        {
+          "dialog": "final dialog text here"
+        }
+        DO NOT OMIT THE "version" FIELD when calling GPT-4o. It is required and must be "openai/gpt-4o".
         """,
         inputs=[
-            StepOutput("format_product_description"),
+            StepOutput("generate_product_description"),
             Input("dialog_system_prompt"),
+            Input("dialog_choice"),
+            Input("custom_dialog"),
         ],
-        step_name="generate_auto_dialog",
-    )
-    .function_step(
-        function=extract_and_join_text_content,
-        args={"json_output": StepOutput("generate_auto_dialog")},
-        step_name="format_auto_dialog",
-    )
-    .function_step(
-        function=lambda auto_dialog, custom_dialog, dialog_choice: (
-            auto_dialog if dialog_choice == "2" else custom_dialog
-        ),
-        args={
-            "auto_dialog": StepOutput("format_auto_dialog"),
-            "custom_dialog": Input("custom_dialog"),
-            "dialog_choice": Input("dialog_choice"),
-        },
-        step_name="format_dialog",
+        step_name="generate_final_dialog",
+        output_schema=DialogOutput,
     )
     .single_tool_agent_step(
         tool="portia:mcp:custom:mcp.replicate.com:create_predictions",
@@ -787,8 +797,8 @@ plan = (
           "input": {
             "avatar_image": [use the character_url_final output - this is the character/avatar image URL],
             "product_image": [use the product_url input - this is the product image URL],
-            "product_description": [use the format_product_description output - this describes what the product is and looks like],
-            "dialogs": [use the format_dialog output - this is what the person says in the video],
+            "product_description": [use the generate_product_description.description output - this describes what the product is and looks like],
+            "dialogs": [use the generate_final_dialog.dialog output - this is what the person says in the video],
             "debug_mode": true
           },
           "jq_filter": "{id: .id, status: .status}",
@@ -801,8 +811,8 @@ plan = (
         inputs=[
             StepOutput("character_url_final"),
             Input("product_url"),
-            StepOutput("format_product_description"),
-            StepOutput("format_dialog"),
+            StepOutput("generate_product_description"),
+            StepOutput("generate_final_dialog"),
         ],
         step_name="generate_ugc",
     )
@@ -817,8 +827,8 @@ plan = (
         1. Extract the JSON from content[0].text
         2. Parse it to get the id and status
         3. Create a structured object with ALL these fields:
-           - product_description: [use the format_product_description output]
-           - dialog: [use the format_dialog output] 
+           - product_description: [use the generate_product_description.description output]
+           - dialog: [use the generate_final_dialog.dialog output] 
            - character_url: [use the character_url_final output]
            - product_url: [use the product_url input]
            - id: [extracted from the UGC response]
@@ -828,8 +838,8 @@ plan = (
         """,
         inputs=[
             StepOutput("generate_ugc"),
-            StepOutput("format_product_description"),
-            StepOutput("format_dialog"),
+            StepOutput("generate_product_description"),
+            StepOutput("generate_final_dialog"),
             StepOutput("character_url_final"),
             Input("product_url"),
         ],
