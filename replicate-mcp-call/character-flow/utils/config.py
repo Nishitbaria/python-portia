@@ -15,7 +15,7 @@ from .streaming_hooks import create_streaming_hooks
 
 
 load_dotenv()
-# ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
+# ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY") \
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 ACCOUNT_ID = os.getenv("MAKE_DOT_COM_ACCOUNT_ID")
 
@@ -30,7 +30,7 @@ openai_config = Config.from_default(
 
 portia = Portia(
     config=openai_config,
-    execution_hooks=create_streaming_hooks("plan_stream.json"),
+    execution_hooks=ExecutionHooks(),
     tools=(
         PortiaToolRegistry(config=openai_config)
         .with_tool_description(

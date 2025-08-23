@@ -11,12 +11,14 @@ from portia import MultipleChoiceClarification, InputClarification
 # Pydantic models for the social media scheduler
 class ChannelDetection(BaseModel):
     """Model for detecting social media channels from user prompt"""
+
     channel: str  # "both", "instagram", "twitter"
     reasoning: str  # Why this channel was chosen
 
 
 class CaptionGeneration(BaseModel):
     """Model for generated captions based on channel"""
+
     instagram_caption: str
     twitter_post: Optional[str] = None  # Only if channel is "both" or "twitter"
     channel: str
@@ -24,6 +26,7 @@ class CaptionGeneration(BaseModel):
 
 class SchedulingData(BaseModel):
     """Final model for Google Sheets integration"""
+
     media_url: str
     instagram_caption: str
     date_time: str  # ISO format in IST
@@ -69,55 +72,78 @@ OUTPUT FORMAT:
 
 
 def convert_natural_time_to_iso(natural_time_input: str) -> str:
-    """Convert natural language time to ISO format in IST timezone"""
-    # This is a simplified converter - in production, you'd use a library like dateparser
-    from datetime import datetime, timedelta
+    """Convert natural language time to UTC ISO format (from IST)"""
+    from datetime import datetime, timedelta, timezone
     import re
-    
-    now = datetime.now()
-    
+
+    # IST timezone is UTC+5:30
+    IST = timezone(timedelta(hours=5, minutes=30))
+
+    # Get current time in IST
+    now_ist = datetime.now(IST)
+
     # Simple patterns
     if "now" in natural_time_input.lower():
-        return now.strftime("%Y-%m-%dT%H:%M:%S.000Z")
+        # Convert IST to UTC
+        utc_time = now_ist.astimezone(timezone.utc)
+        return utc_time.strftime("%Y-%m-%dT%H:%M:%S.000Z")
     elif "tomorrow" in natural_time_input.lower():
-        tomorrow = now + timedelta(days=1)
+        tomorrow_ist = now_ist + timedelta(days=1)
         # Extract time if mentioned (e.g., "tomorrow 3pm")
-        time_match = re.search(r'(\d{1,2})(?::(\d{2}))?\s*(am|pm)', natural_time_input.lower())
+        time_match = re.search(
+            r"(\d{1,2})(?::(\d{2}))?\s*(am|pm)", natural_time_input.lower()
+        )
         if time_match:
             hour = int(time_match.group(1))
             minute = int(time_match.group(2) or 0)
             ampm = time_match.group(3)
-            if ampm == 'pm' and hour != 12:
+            if ampm == "pm" and hour != 12:
                 hour += 12
-            elif ampm == 'am' and hour == 12:
+            elif ampm == "am" and hour == 12:
                 hour = 0
-            tomorrow = tomorrow.replace(hour=hour, minute=minute, second=0, microsecond=0)
-        return tomorrow.strftime("%Y-%m-%dT%H:%M:%S.000Z")
+            tomorrow_ist = tomorrow_ist.replace(
+                hour=hour, minute=minute, second=0, microsecond=0
+            )
+        # Convert IST to UTC
+        utc_time = tomorrow_ist.astimezone(timezone.utc)
+        return utc_time.strftime("%Y-%m-%dT%H:%M:%S.000Z")
+    elif "in" in natural_time_input.lower():
+        # Handle "in X hours/minutes" format
+        hours_match = re.search(r"in\s+(\d+)\s+hours?", natural_time_input.lower())
+        minutes_match = re.search(r"in\s+(\d+)\s+minutes?", natural_time_input.lower())
+
+        future_ist = now_ist
+        if hours_match:
+            hours = int(hours_match.group(1))
+            future_ist += timedelta(hours=hours)
+        elif minutes_match:
+            minutes = int(minutes_match.group(1))
+            future_ist += timedelta(minutes=minutes)
+
+        # Convert IST to UTC
+        utc_time = future_ist.astimezone(timezone.utc)
+        return utc_time.strftime("%Y-%m-%dT%H:%M:%S.000Z")
     else:
         # Default to 1 hour from now
-        future = now + timedelta(hours=1)
-        return future.strftime("%Y-%m-%dT%H:%M:%S.000Z")
+        future_ist = now_ist + timedelta(hours=1)
+        # Convert IST to UTC
+        utc_time = future_ist.astimezone(timezone.utc)
+        return utc_time.strftime("%Y-%m-%dT%H:%M:%S.000Z")
 
 
 # Build the social media scheduler plan
 social_scheduler_plan = (
     PlanBuilderV2("Social Media Content Scheduler")
     .input(
-        name="user_prompt", 
-        description="User's scheduling prompt (e.g., 'Post this video to Instagram tomorrow at 3pm')"
+        name="user_prompt",
+        description="User's scheduling prompt (e.g., 'Post this video to Instagram tomorrow at 3pm')",
     )
+    .input(name="media_url", description="Generated video URL from UGC creation")
     .input(
-        name="media_url", 
-        description="Generated video URL from UGC creation"
+        name="product_description",
+        description="Product description from UGC generation",
     )
-    .input(
-        name="product_description", 
-        description="Product description from UGC generation"
-    )
-    .input(
-        name="dialog", 
-        description="Dialog text from UGC generation"
-    )
+    .input(name="dialog", description="Dialog text from UGC generation")
     .llm_step(
         task=f"""
         {CHANNEL_DETECTION_PROMPT}
@@ -145,7 +171,7 @@ social_scheduler_plan = (
         """,
         inputs=[
             Input("product_description"),
-            Input("dialog"), 
+            Input("dialog"),
             StepOutput("detect_channels"),
         ],
         output_schema=CaptionGeneration,
@@ -162,26 +188,31 @@ def create_content_validation_plan(generated_captions: CaptionGeneration):
 🎨 Generated Content:
 📱 Instagram Caption: {generated_captions.instagram_caption}
 """
-    
+
     if generated_captions.twitter_post:
         content_display += f"🐦 Twitter Post: {generated_captions.twitter_post}\n"
-    
+
     content_display += f"📺 Target Channel(s): {generated_captions.channel}"
-    
+
     validation_plan = portia.plan(f"""
     {content_display}
     
-    Please review the generated social media content above. 
-    Ask the user if they approve this content or want to make changes.
-    If they want changes, ask what specific changes they'd like to make.
-    """)
+    You need to validate the generated social media content with the user.
     
+    Show the user the content above and ask them: "Do you approve this content or would you like to make changes?"
+    
+    Wait for their response. If they want changes, ask them what specific changes they would like to make.
+    
+    This should raise a clarification to get user input.
+    """)
+
     return validation_plan
 
 
 def create_time_scheduling_plan():
     """Create a plan that asks user for scheduling time"""
-    scheduling_plan = portia.plan("""
+    scheduling_plan = portia.plan(
+        """
     Ask the user when they would like to schedule this social media post.
     
     Examples of time formats they can use:
@@ -195,8 +226,9 @@ def create_time_scheduling_plan():
     IMPORTANT: Do NOT call any Google tools or authentication services. 
     You are only asking for user input, not accessing any external services yet.
     Simply ask the user for their preferred scheduling time and return their response.
-    """)
-    
+    """
+    )
+
     return scheduling_plan
 
 
@@ -233,30 +265,32 @@ def create_sheets_integration_plan(final_data: SchedulingData):
                 Input("instagram_caption"),
                 Input("date_time"),
                 Input("twitter_post"),
-                Input("channel")
+                Input("channel"),
             ],
             step_name="save_to_sheets",
         )
         .final_output()
         .build()
     )
-    
+
     return sheets_plan
 
 
 def main():
     """Main function for social media scheduler with UGC data"""
     print("📱 Welcome to Social Media Scheduler!")
-    
+
     # Get user input
-    user_prompt = input("\nDescribe how you want to schedule this post (e.g., 'Post this to Instagram tomorrow at 3pm'): ").strip()
-    
+    user_prompt = input(
+        "\nDescribe how you want to schedule this post (e.g., 'Post this to Instagram tomorrow at 3pm'): "
+    ).strip()
+
     # These would come from the UGC generation process
     # For now, we'll use example data or get from user
     media_url = input("Video URL from UGC generation: ").strip()
     product_description = input("Product description from UGC: ").strip()
     dialog = input("Dialog from UGC video: ").strip()
-    
+
     # Step 1: Run initial caption generation plan
     print("\n🎨 Generating captions...")
     caption_run = portia.run_plan(
@@ -266,17 +300,17 @@ def main():
             "media_url": media_url,
             "product_description": product_description,
             "dialog": dialog,
-        }
+        },
     )
-    
+
     generated_captions = caption_run.outputs.final_output.value
     print(f"Generated captions: {generated_captions}")
-    
+
     # Step 2: Content validation with clarifications
     print("\n✅ Validating content...")
     validation_plan = create_content_validation_plan(generated_captions)
     validation_run = portia.run_plan(validation_plan)
-    
+
     # Handle clarifications for content validation
     final_captions = generated_captions
     while validation_run.state == "NEED_CLARIFICATION":
@@ -301,22 +335,22 @@ def main():
                 validation_run = portia.resolve_clarification(
                     clarification, user_input, validation_run
                 )
-        
+
         validation_run = portia.resume(validation_run)
-    
+
     # Extract validation result
     validation_result = validation_run.outputs.final_output.value
     print(f"Content validation result: {validation_result}")
-    
+
     # Update captions if user provided changes
     # This is a simplified approach - in real implementation, you'd parse the validation result
     # and potentially re-run caption generation with modifications
-    
+
     # Step 3: Time scheduling with clarifications
     print("\n⏰ Setting schedule time...")
     time_plan = create_time_scheduling_plan()
     time_run = portia.run_plan(time_plan)
-    
+
     # Handle clarifications for time scheduling
     while time_run.state == "NEED_CLARIFICATION":
         clarifications = time_run.get_outstanding_clarifications()
@@ -340,29 +374,29 @@ def main():
                 time_run = portia.resolve_clarification(
                     clarification, user_input, time_run
                 )
-        
+
         time_run = portia.resume(time_run)
-    
+
     # Extract time result and convert to ISO format
     time_result = time_run.outputs.final_output.value
     print(f"Time scheduling result: {time_result}")
-    
+
     # Convert natural language time to ISO format
     scheduled_time = convert_natural_time_to_iso(time_result)
     print(f"📅 Scheduled for: {scheduled_time}")
-    
+
     # Step 4: Save to Google Sheets
     print("\n💾 Saving to Google Sheets...")
-    
+
     # Prepare final data
     final_data = SchedulingData(
         media_url=media_url,
         instagram_caption=final_captions.instagram_caption,
         date_time=scheduled_time,
         twitter_post=final_captions.twitter_post or "",
-        channel=final_captions.channel
+        channel=final_captions.channel,
     )
-    
+
     sheets_plan = create_sheets_integration_plan(final_data)
     sheets_run = portia.run_plan(
         sheets_plan,
@@ -371,10 +405,10 @@ def main():
             "instagram_caption": final_data.instagram_caption,
             "date_time": final_data.date_time,
             "twitter_post": final_data.twitter_post,
-            "channel": final_data.channel
-        }
+            "channel": final_data.channel,
+        },
     )
-    
+
     print("\n🎉 Social media post has been scheduled!")
     print(f"✅ Platform(s): {final_data.channel}")
     print(f"📱 Instagram Caption: {final_data.instagram_caption}")
@@ -382,7 +416,7 @@ def main():
         print(f"🐦 Twitter Post: {final_data.twitter_post}")
     print(f"⏰ Scheduled Time: {final_data.date_time}")
     print(f"🎥 Video URL: {final_data.media_url}")
-    
+
     return final_data
 
 
