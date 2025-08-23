@@ -25,6 +25,10 @@ class ProductDescription(BaseModel):
     description: str
 
 
+class character_url(BaseModel):
+    character_url: str
+
+
 # Final output schema
 class FinalOutput(BaseModel):
     character_url: str
@@ -100,6 +104,25 @@ def extract_and_join_text_content(json_output):
     except Exception as e:
         # If any error occurs, return the original as string
         return str(json_output)
+
+
+def pick_first_url(value: object) -> str:
+    try:
+        import json
+
+        data = value
+        if isinstance(value, str):
+            try:
+                data = json.loads(value)
+            except json.JSONDecodeError:
+                return value
+        if isinstance(data, list) and data:
+            return str(data[0])
+        if isinstance(data, str):
+            return data
+        return str(value)
+    except Exception:
+        return str(value)
 
 
 def get_dialog_choice():
@@ -307,6 +330,33 @@ def pack_final_output(
     }
 
 
+def extract_avatar_url(result: object, original_url: str, choice: str) -> str:
+    """Return final character URL.
+    - If choice == "2" (prebuilt), return original_url.
+    - Else, try to read URL from result.output (string or first element of list). Fallback to original_url.
+    """
+    if choice == "2":
+        return original_url
+    try:
+        import json
+
+        data = result
+        if isinstance(result, str):
+            try:
+                data = json.loads(result)
+            except json.JSONDecodeError:
+                return result
+        if isinstance(data, dict):
+            out = data.get("output")
+            if isinstance(out, list) and out:
+                return str(out[0])
+            if isinstance(out, str) and out:
+                return out
+        return original_url
+    except Exception:
+        return original_url
+
+
 # Build the plan using PlanBuilderV2
 plan = (
     PlanBuilderV2("UGC Generator - Character and Product Setup with Replicate")
@@ -353,28 +403,49 @@ plan = (
         },
         step_name="get_character_url",
     )
+    .if_(
+        condition=lambda choice: choice == "1",
+        args={"choice": Input("character_choice")},
+    )
     .single_tool_agent_step(
         tool="portia:mcp:custom:mcp.replicate.com:create_predictions",
         task="""
-        If the character_choice is "1" (bring your own character), process the character URL through the UGC Avatar generation tool.
-        
-        Call the UGC Avatar generation model with:
-        - version: 3e88784279f0a99fcbe57f8be1c6f32d5398f19606d3008d310585d6ae3689e4
-        - input.user_image: The character URL from get_character_url step
+        You MUST call the UGC Avatar Replicate model with EXACT arguments and return ONLY the jq-filtered output.
+
+        Required call:
+        - version: 706321a35bebe81c99cb83a6b6db6b1cc0b7281f8da9be48a438de5e0aea3183
+        - input.user_image: the provided character URL
         - input.magic_prompt: false
         - input.avatar_preset: "Home Office Avatar"
+        - input.debug_mode: true
         - Prefer: wait
-        - jq_filter: "{id: .id, status: .status, output: .output}"
-        
-        If character_choice is "2" (prebuild), just return the character URL as is.
-        
-        This will generate a proper avatar from the user's image and return the avatar URL in the output field.
+        - jq_filter: ".output"
+
+        Do not produce any analysis or text. The step output must be ONLY the jq-filtered result from the tool.
         """,
-        inputs=[
-            StepOutput("get_character_url"),
-            Input("character_choice"),
-        ],
-        step_name="process_character_url",
+        inputs=[StepOutput("get_character_url")],
+        step_name="avatar_output_raw",
+    )
+    .function_step(
+        function=pick_first_url,
+        args={"value": StepOutput("avatar_output_raw")},
+        step_name="character_url_generated",
+    )
+    .else_()
+    .function_step(
+        function=lambda url: url,
+        args={"url": StepOutput("get_character_url")},
+        step_name="character_url_prebuilt",
+    )
+    .endif()
+    .function_step(
+        function=lambda gen, pre, choice: gen if choice == "1" else pre,
+        args={
+            "gen": StepOutput("character_url_generated"),
+            "pre": StepOutput("character_url_prebuilt"),
+            "choice": Input("character_choice"),
+        },
+        step_name="character_url_final",
     )
     .function_step(
         function=validate_url,
@@ -438,18 +509,20 @@ plan = (
         tool="portia:mcp:custom:mcp.replicate.com:create_predictions",
         task="""
         Call the UGC ads generator model with the following inputs:
-        - version: 3e88784279f0a99fcbe57f8be1c6f32d5398f19606d3008d310585d6ae3689e4
-        - input.avatar_image: The processed character URL (from process_character_url step)
+        - version: 1fb1d9f3ffb5da9774c24ce528c54c916d8d6cd63af866fe2afe85e44fb99999
+        - input.avatar_image: The processed character URL (from character_url_final step)
         - input.product_image: The product image URL  
         - input.product_description: The generated product description
         - input.dialogs: The generated or custom dialog
+        - input.debug_mode: true
         - Prefer: wait=5
+        
         - jq_filter: "{id: .id, status: .status}"
         
         This will generate a UGC video using the provided character, product, description, and dialog.
         """,
         inputs=[
-            StepOutput("process_character_url"),
+            StepOutput("character_url_final"),
             Input("product_url"),
             StepOutput("format_product_description"),
             StepOutput("format_dialog"),
@@ -459,7 +532,7 @@ plan = (
     .function_step(
         function=pack_final_output,
         args={
-            "character_url": StepOutput("process_character_url"),
+            "character_url": StepOutput("character_url_final"),
             "product_url": Input("product_url"),
             "product_description": StepOutput("format_product_description"),
             "dialog": StepOutput("format_dialog"),
