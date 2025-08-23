@@ -32,7 +32,8 @@ portia = Portia(
     config=openai_config,
     execution_hooks=create_streaming_hooks("plan_stream.json"),
     tools=(
-        PortiaToolRegistry(config=openai_config).with_tool_description(
+        PortiaToolRegistry(config=openai_config)
+        .with_tool_description(
             "portia:mcp:custom:mcp.replicate.com:get_predictions",
             """
             Use this tool to fetch a Replicate prediction by its id.
@@ -44,6 +45,37 @@ portia = Portia(
               - output: list of image URL strings if present, otherwise null
             MAKE ONLY ONE CALL.
             """,
+        )
+        .with_tool_description(
+            "portia:mcp:custom:us2.make.com:s2825571_on_demand_add_row_to_sheet",
+            f"""
+    Use this tool to add a row to a Google Sheet for tracking UGC content generation.
+
+    Input payload fields:
+    - media_url: The generated video URL from the UGC creation process (required)
+    - instagram_caption: Text caption for Instagram posts (required)
+    - date_time: Current timestamp in ISO format "2025-08-23T11:30:00.000Z" (IST timezone)
+    - twitter_post: Tweet text for Twitter posts (required if channel is "both" or "twitter", otherwise can be None/empty)
+    - channel: Target social media platform - "both" | "instagram" | "twitter"
+      → "both": posting to both Instagram and Twitter
+      → "instagram": posting only to Instagram
+      → "twitter": posting only to Twitter
+
+    Field requirements based on channel:
+    - If channel = "both" or "twitter": twitter_post is required
+    - If channel = "instagram": twitter_post can be None or empty
+    - media_url and instagram_caption are always required
+    - date_time should be current timestamp in IST timezone
+
+    Example payload:
+    {{
+      "media_url": "https://replicate.delivery/abc123/video.mp4",
+      "instagram_caption": "Check out this amazing product! #beauty #skincare",
+      "date_time": "2025-08-23T11:30:00.000Z",
+      "twitter_post": "Amazing product launch! Details in bio.",
+      "channel": "both"
+    }}
+    """,
         )
     ),
 )
