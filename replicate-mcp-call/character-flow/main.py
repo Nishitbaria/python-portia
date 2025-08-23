@@ -31,6 +31,7 @@ class FinalOutput(BaseModel):
     product_url: str
     product_description: str
     dialog: str
+    ugc_prediction: dict
 
 
 def validate_url(url):
@@ -124,6 +125,84 @@ def get_custom_dialog():
         print("Dialog cannot be empty. Please enter a valid dialog.")
 
 
+def extract_id_and_status(result):
+    """Extract prediction ID and status from Replicate result"""
+    try:
+        if isinstance(result, str):
+            import json
+
+            data = json.loads(result)
+        else:
+            data = result
+
+        if isinstance(data, dict):
+            prediction_id = data.get("id")
+            status = data.get("status")
+            return prediction_id, status
+
+        return None, None
+    except Exception:
+        return None, None
+
+
+def poll_prediction_until_complete(
+    portia, prediction_id, max_attempts=30, delay_seconds=2
+):
+    """Poll a Replicate prediction until it's complete"""
+    import time
+
+    for attempt in range(max_attempts):
+        print(f"Polling attempt {attempt + 1}/{max_attempts}...")
+
+        # Create polling plan
+        polling_plan = (
+            PlanBuilderV2("Poll Replicate prediction")
+            .invoke_tool_step(
+                tool="portia:mcp:custom:mcp.replicate.com:get_predictions",
+                args={
+                    "id": prediction_id,
+                },
+                step_name="get_prediction_status",
+            )
+            .final_output(output_schema=dict)
+            .build()
+        )
+
+        # Run polling plan
+        polling_run = portia.run_plan(
+            polling_plan,
+            plan_run_inputs={},
+        )
+
+        result = polling_run.outputs.final_output.value
+
+        # Extract status and output
+        if isinstance(result, dict):
+            status = result.get("status")
+            output = result.get("output")
+
+            print(f"Status: {status}")
+
+            if status == "succeeded" and output:
+                print("✅ Prediction completed successfully!")
+                return output
+            elif status in ["failed", "canceled"]:
+                print(f"❌ Prediction failed with status: {status}")
+                return None
+            elif status in ["starting", "processing"]:
+                print(f"⏳ Still processing... (status: {status})")
+                time.sleep(delay_seconds)
+            else:
+                print(f"⚠️ Unknown status: {status}")
+                time.sleep(delay_seconds)
+        else:
+            print(f"⚠️ Unexpected result format: {result}")
+            time.sleep(delay_seconds)
+
+    print(f"❌ Timed out after {max_attempts} attempts")
+    return None
+
+
 # System prompt for product description
 PRODUCT_DESCRIPTION_SYSTEM_PROMPT = """
 For Product description Agent:
@@ -213,13 +292,18 @@ Return ONLY the two sentences on separate lines no titles, bullets, or quotes.
 
 
 def pack_final_output(
-    character_url: str, product_url: str, product_description: str, dialog: str
+    character_url: str,
+    product_url: str,
+    product_description: str,
+    dialog: str,
+    ugc_prediction: dict,
 ) -> dict:
     return {
         "character_url": character_url,
         "product_url": product_url,
         "product_description": product_description,
         "dialog": dialog,
+        "ugc_prediction": ugc_prediction,
     }
 
 
@@ -268,6 +352,29 @@ plan = (
             "prebuild_choice": Input("prebuild_character_choice"),
         },
         step_name="get_character_url",
+    )
+    .single_tool_agent_step(
+        tool="portia:mcp:custom:mcp.replicate.com:create_predictions",
+        task="""
+        If the character_choice is "1" (bring your own character), process the character URL through the UGC Avatar generation tool.
+        
+        Call the UGC Avatar generation model with:
+        - version: 3e88784279f0a99fcbe57f8be1c6f32d5398f19606d3008d310585d6ae3689e4
+        - input.user_image: The character URL from get_character_url step
+        - input.magic_prompt: false
+        - input.avatar_preset: "Home Office Avatar"
+        - Prefer: wait
+        - jq_filter: "{id: .id, status: .status, output: .output}"
+        
+        If character_choice is "2" (prebuild), just return the character URL as is.
+        
+        This will generate a proper avatar from the user's image and return the avatar URL in the output field.
+        """,
+        inputs=[
+            StepOutput("get_character_url"),
+            Input("character_choice"),
+        ],
+        step_name="process_character_url",
     )
     .function_step(
         function=validate_url,
@@ -327,13 +434,36 @@ plan = (
         },
         step_name="format_dialog",
     )
+    .single_tool_agent_step(
+        tool="portia:mcp:custom:mcp.replicate.com:create_predictions",
+        task="""
+        Call the UGC ads generator model with the following inputs:
+        - version: 3e88784279f0a99fcbe57f8be1c6f32d5398f19606d3008d310585d6ae3689e4
+        - input.avatar_image: The processed character URL (from process_character_url step)
+        - input.product_image: The product image URL  
+        - input.product_description: The generated product description
+        - input.dialogs: The generated or custom dialog
+        - Prefer: wait=5
+        - jq_filter: "{id: .id, status: .status}"
+        
+        This will generate a UGC video using the provided character, product, description, and dialog.
+        """,
+        inputs=[
+            StepOutput("process_character_url"),
+            Input("product_url"),
+            StepOutput("format_product_description"),
+            StepOutput("format_dialog"),
+        ],
+        step_name="generate_ugc",
+    )
     .function_step(
         function=pack_final_output,
         args={
-            "character_url": StepOutput("get_character_url"),
+            "character_url": StepOutput("process_character_url"),
             "product_url": Input("product_url"),
             "product_description": StepOutput("format_product_description"),
             "dialog": StepOutput("format_dialog"),
+            "ugc_prediction": StepOutput("generate_ugc"),
         },
         step_name="pack_final_output",
     )
@@ -427,12 +557,43 @@ def main():
     # Display results
     print("\n🎉 Plan execution complete!")
     final_output = plan_run.outputs.final_output.value
-    print(f"Character URL: {final_output['character_url']}")
-    print(f"Product URL: {final_output['product_url']}")
-    print(f"Product Description: {final_output['product_description']}")
-    print(f"Dialog: {final_output['dialog']}")
 
-    return final_output
+    # Handle both string and dictionary outputs
+    if isinstance(final_output, str):
+        print(f"Final Output (string): {final_output}")
+        return final_output
+    elif isinstance(final_output, dict):
+        print(f"Character URL: {final_output.get('character_url', 'N/A')}")
+        print(f"Product URL: {final_output.get('product_url', 'N/A')}")
+        print(f"Product Description: {final_output.get('product_description', 'N/A')}")
+        print(f"Dialog: {final_output.get('dialog', 'N/A')}")
+
+        # Extract UGC prediction ID and status
+        ugc_prediction = final_output.get("ugc_prediction", {})
+        prediction_id, prediction_status = extract_id_and_status(ugc_prediction)
+
+        if prediction_id:
+            print(f"\n🎬 UGC Generation Started:")
+            print(f"Prediction ID: {prediction_id}")
+            print(f"Status: {prediction_status}")
+
+            # Poll for completion
+            print("\n⏳ Polling for UGC generation completion...")
+            final_ugc_result = poll_prediction_until_complete(portia, prediction_id)
+
+            if final_ugc_result:
+                print("\n✅ UGC Generation Complete!")
+                print("Final UGC Result:")
+                print(final_ugc_result)
+            else:
+                print("\n❌ UGC Generation failed or timed out")
+        else:
+            print("\n❌ Could not extract prediction ID from UGC generation result")
+
+        return final_output
+    else:
+        print(f"Final Output (unknown type): {final_output}")
+        return final_output
 
 
 if __name__ == "__main__":
