@@ -23,6 +23,41 @@ We built an intelligent AI marketing agent using Portia AI that automates the en
 
 ## What Our Agent Can Do
 
+### Workflow Overview
+
+```mermaid
+graph TD
+    A[Product Image Input] --> B[AI Product Analysis]
+    B --> C[Generate Product Description]
+
+    D[Character Choice] --> E[Avatar Processing]
+    E --> F[Custom or Pre-built Avatar]
+
+    G[Dialog Choice] --> H[Content Generation]
+    H --> I[Custom Dialog or AI-Generated Script]
+
+    C --> J[Content Assembly]
+    F --> J
+    I --> J
+
+    J --> K[UGC Video Generation]
+    K --> L[Replicate AI Models]
+    L --> M[Final UGC Video]
+
+    M --> N[Content Planning]
+    N --> O[Google Sheets Integration]
+    O --> P[Google Calendar Sync]
+
+    M --> Q[Social Media Distribution]
+    Q --> R[Make.com Workflow]
+    R --> S[Instagram Posting]
+
+    style A fill:#e1f5fe
+    style M fill:#c8e6c9
+    style S fill:#fff3e0
+    style L fill:#f3e5f5
+```
+
 ### Core Capabilities
 
 1. **Smart Product Analysis**: AI-powered image understanding and description generation
