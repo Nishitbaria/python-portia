@@ -83,12 +83,13 @@ Example payload:
 def get_portia_with_custom_tools():
     """Get Portia instance with custom tools registered"""
     # Import here to avoid circular imports
-    from social_scheduler import ContentValidationTool, TimeSchedulingTool
+    from social_scheduler import ContentValidationTool, TimeSchedulingTool, ContentRevisionTool
     
     # Create custom tool registry
     custom_tool_registry = InMemoryToolRegistry.from_local_tools([
         ContentValidationTool(),
-        TimeSchedulingTool()
+        TimeSchedulingTool(),
+        ContentRevisionTool()
     ])
     
     # Combine registries
