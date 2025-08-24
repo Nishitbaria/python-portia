@@ -683,7 +683,7 @@ plan = (
         - input.user_image: the provided character URL
         - input.magic_prompt: false
         - input.avatar_preset: "Home Office Avatar"
-        - input.debug_mode: true
+        - input.debug_mode: false
         - Prefer: wait
         - jq_filter: ".output"
 
@@ -822,7 +822,7 @@ Return only the dialog text as a string.""",
             "product_image": [use the product_url input - this is the product image URL],
             "product_description": [use the generate_product_description.description output - this describes what the product is and looks like],
             "dialogs": [use the generate_final_dialog output - this is what the person says in the video],
-            "debug_mode": true
+            "debug_mode": false
             
           },
           "jq_filter": "{id: .id, status: .status}",
