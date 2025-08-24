@@ -508,7 +508,7 @@ INPUTS
 - image (optional): use only obvious visuals (container type/color, label/brand text). If image and prompt conflict, the prompt is the source of truth.
 
 OUTPUT RULES
-1) Output EXACTLY 2 sentences on separate lines; speakable in ~10 seconds total (≈18–28 words combined).
+1) Output EXACTLY 2 sentences on separate lines; speakable in ~10 seconds total (≈18-28 words combined).
 2) Sentence 1 = quick hook + brand/product mention (once).
 3) Sentence 2 = 1-2 concrete attributes/benefits pulled from the prompt; add a soft CTA only if `include_cta=true`.
 4) Do NOT invent claims, numbers, SPF, ingredients, or certifications. No filler like "for all skin types," "pH-balanced," etc., unless explicitly present in the prompt.
@@ -747,12 +747,13 @@ plan = (
         step_name="generate_product_description",
         output_schema=ProductDescription,
     )
+    .if_(
+        condition=lambda choice: choice == "2",
+        args={"choice": Input("dialog_choice")},
+    )
     .single_tool_agent_step(
         tool="portia:mcp:custom:mcp.replicate.com:create_predictions",
         task="""
-        You need to generate the final dialog based on the user's choice:
-        
-        If dialog_choice is "2" (auto generate dialog):
         - Call GPT-4o with this structure:
         {
           "version": "openai/gpt-4o",
@@ -764,19 +765,40 @@ plan = (
           "Prefer": "wait"
         }
         - Extract the dialog text from the array output
-        
-        If dialog_choice is "1" (custom dialog):
-        - Simply return the custom_dialog input as-is
-        
+
         IMPORTANT: Return the final dialog text in this format:
         {
-          "dialog": "final dialog text here"
+          "dialog": [generated dialog text here]
         }
         DO NOT OMIT THE "version" FIELD when calling GPT-4o. It is required and must be "openai/gpt-4o".
+        - RETURN IN THIS FORMAT ONLY
         """,
         inputs=[
             StepOutput("generate_product_description"),
             Input("dialog_system_prompt"),
+        ],
+        step_name="generate_auto_dialog",
+        output_schema=DialogOutput,
+    )
+    .else_()
+    .function_step(
+        function=lambda custom_dialog: {"dialog": custom_dialog},
+        args={"custom_dialog": Input("custom_dialog")},
+        step_name="use_custom_dialog",
+        output_schema=DialogOutput,
+    )
+    .endif()
+    .llm_step(
+        task="""Based on the choice provided, return the appropriate dialog:
+
+Choice: {{dialog_choice}}
+Custom dialog (if choice is not "2"): {{custom_dialog}}
+
+If choice is "2", return: "Check out this Bed Head TIGI shampoo! Its formula leaves my hair feeling fresh and clean."
+If choice is not "2", return the custom dialog provided.
+
+Return only the dialog text as a string.""",
+        inputs=[
             Input("dialog_choice"),
             Input("custom_dialog"),
         ],
@@ -799,8 +821,9 @@ plan = (
             "avatar_image": [use the character_url_final output - this is the character/avatar image URL],
             "product_image": [use the product_url input - this is the product image URL],
             "product_description": [use the generate_product_description.description output - this describes what the product is and looks like],
-            "dialogs": [use the generate_final_dialog.dialog output - this is what the person says in the video],
+            "dialogs": [use the generate_final_dialog output - this is what the person says in the video],
             "debug_mode": true
+            
           },
           "jq_filter": "{id: .id, status: .status}",
           "Prefer": "wait=5"
@@ -819,23 +842,21 @@ plan = (
     )
     .llm_step(
         task="""
-        You will receive the output from the previous step which contains the UGC generation response.
+        Your task is to extract the id and status field from this {generate_ugc} and combine it with other data.
         
-        The response will be in this format:
-        {"meta":null,"content":[{"type":"text","text":"{\\"id\\":\\"ej30c7shdxrme0crv0pr0fm8ag\\",\\"status\\":\\"starting\\"}"}]}
-        
-        Your task is to:
-        1. Extract the JSON from content[0].text
-        2. Parse it to get the id and status
-        3. Create a structured object with ALL these fields:
+        Steps:
+        1. Look at the generate_ugc output and find the actual JSON data inside it
+        2. Extract the real "id" and "status" values from that JSON (ignore any examples)
+        3. Create a structured object with these 6 fields:
            - product_description: [use the generate_product_description.description output]
            - dialog: [use the generate_final_dialog.dialog output] 
            - character_url: [use the character_url_final output]
            - product_url: [use the product_url input]
-           - id: [extracted from the UGC response]
-           - status: [extracted from the UGC response]
+           - id: [the ACTUAL prediction ID from the UGC response]
+           - status: [the ACTUAL status from the UGC response]
         
-        Return ONLY the structured object with these 6 fields.
+        CRITICAL: Do NOT use example IDs or placeholder text. Use only the real data from the inputs.
+        Return ONLY the structured object with these 6 fields as JSON.
         """,
         inputs=[
             StepOutput("generate_ugc"),
@@ -855,7 +876,28 @@ plan = (
 
 
 def main():
-    print("🎬 Welcome to UGC Generator!")
+    print("🎬 Welcome to Ad Generator!")
+    print("\n=== Ad Type Selection ===")
+    print("1. Generate a UGC ad")
+    print("2. Generate a Product ad")
+
+    # Get ad type choice
+    while True:
+        ad_type_choice = input("\nEnter your choice (1 or 2): ").strip()
+        if ad_type_choice in ["1", "2"]:
+            break
+        print("Invalid choice. Please enter 1 or 2.")
+
+    if ad_type_choice == "1":
+        # UGC Ad workflow
+        return generate_ugc_ad()
+    else:
+        # Product Ad workflow
+        return generate_product_ad()
+
+
+def generate_ugc_ad():
+    print("\n🎬 UGC Ad Generation Selected!")
     print("\n=== Character Selection ===")
     print("1. Bring your own character")
     print("2. Use prebuild characters")
@@ -984,6 +1026,127 @@ def main():
             print("\n❌ UGC Generation failed or timed out")
     else:
         print("\n❌ Could not extract prediction ID from UGC generation result")
+        print(f"Final output object: {final_output}")
+
+    return final_output
+
+
+def generate_product_ad():
+    print("\n📸 Product Ad Generation Selected!")
+
+    # Get product URL
+    print("\n=== Product Image ===")
+    print("Please provide the URL of your product image.")
+
+    while True:
+        product_url = input("\nEnter the product image URL: ").strip()
+        if validate_url(product_url):
+            break
+        print("Invalid URL. Please enter a valid URL starting with http:// or https://")
+
+    # Get custom prompt for the ad
+    print("\n=== Ad Prompt ===")
+    print("Please provide the prompt for your product ad.")
+
+    while True:
+        ad_prompt = input("\nEnter your ad prompt: ").strip()
+        if ad_prompt and len(ad_prompt) > 0:
+            break
+        print("Prompt cannot be empty. Please enter a valid prompt.")
+
+    print(f"✅ Product URL: {product_url}")
+    print(f"✅ Ad Prompt: {ad_prompt}")
+
+    # Call the product ad generation function
+    print("\n🚀 Generating Product Ad...")
+
+    # Create product ad generation plan
+    product_ad_plan = (
+        PlanBuilderV2("Product Ad Generator")
+        .input(name="product_url", description="Product image URL")
+        .input(name="ad_prompt", description="Ad prompt from user")
+        .single_tool_agent_step(
+            tool="portia:mcp:custom:mcp.replicate.com:create_predictions",
+            task="""
+            Call the Replicate tool with this EXACT structure:
+            {
+              "version": "7428dcc4cdb6d758301c2ae57ca01279e9b6899c5cb01f18f4d577c412b14390",
+              "input": {
+                "prompt": [use the ad_prompt input],
+                "lighting": "auto",
+                "audio_mode": "off",
+                "image_style": "studio",
+                "camera_movement": "auto",
+                "reference_image": [use the product_url input]
+              },
+              "jq_filter": "{id: .id, status: .status}",
+              "Prefer": "wait=1"
+            }
+            
+            DO NOT OMIT THE "version" FIELD. It is required.
+            Return ONLY the id and status from the response.
+            """,
+            inputs=[Input("product_url"), Input("ad_prompt")],
+            step_name="generate_product_ad",
+            output_schema=UGC_Prediction,
+        )
+        .final_output(
+            output_schema=UGC_Prediction,
+        )
+        .build()
+    )
+
+    # Run the product ad plan
+    plan_inputs = {
+        "product_url": product_url,
+        "ad_prompt": ad_prompt,
+    }
+
+    plan_run = portia.run_plan(product_ad_plan, plan_run_inputs=plan_inputs)
+
+    # Display results
+    print("\n🎉 Product Ad plan execution complete!")
+    final_output = plan_run.outputs.final_output.value
+    print(f"Raw final output: {final_output}")
+    print(f"Final output type: {type(final_output)}")
+
+    # Extract prediction ID and status
+    prediction_id, prediction_status = extract_id_and_status(final_output)
+
+    print(f"Extracted prediction_id: {prediction_id}")
+    print(f"Extracted prediction_status: {prediction_status}")
+
+    if prediction_id:
+        print(f"\n📸 Product Ad Generation Started:")
+        print(f"Prediction ID: {prediction_id}")
+        print(f"Status: {prediction_status}")
+
+        # Poll for completion
+        print("\n⏳ Polling for Product Ad generation completion...")
+        final_product_ad_result = poll_prediction_until_complete(portia, prediction_id)
+
+        if final_product_ad_result:
+            print("\n✅ Product Ad Generation Complete!")
+            print("Final Product Ad Result:")
+            print(final_product_ad_result)
+
+            # Extract output URL
+            if (
+                isinstance(final_product_ad_result, list)
+                and len(final_product_ad_result) > 0
+            ):
+                result_item = final_product_ad_result[0]
+                if isinstance(result_item, dict) and "output" in result_item:
+                    output_url = result_item["output"]
+                    print(f"\n🎥 Generated Product Ad URL: {output_url}")
+                else:
+                    print("\n⚠️ Could not find output URL in result")
+            else:
+                print("\n⚠️ Unexpected result format for URL extraction")
+        else:
+            print("\n❌ Product Ad Generation failed or timed out")
+    else:
+        print("\n❌ Could not extract prediction ID from Product Ad generation result")
         print(f"Final output object: {final_output}")
 
     return final_output
