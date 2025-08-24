@@ -422,7 +422,7 @@ def poll_prediction_until_complete(
         result = polling_run.outputs.final_output.value
 
         # Extract status and output from Pydantic model
-        if hasattr(result, 'status') and hasattr(result, 'output'):
+        if hasattr(result, "status") and hasattr(result, "output"):
             status = result.status
             output = result.output
         elif isinstance(result, dict):
@@ -603,6 +603,7 @@ class UGC_Prediction(BaseModel):
 
 class PredictionStatus(BaseModel):
     """Model for prediction status polling"""
+
     status: str
     output: list = None
 
@@ -968,12 +969,12 @@ def main():
             print("\n✅ UGC Generation Complete!")
             print("Final UGC Result:")
             print(final_ugc_result)
-            
+
             # Extract output URL
             if isinstance(final_ugc_result, list) and len(final_ugc_result) > 0:
                 result_item = final_ugc_result[0]
-                if isinstance(result_item, dict) and 'output' in result_item:
-                    output_url = result_item['output']
+                if isinstance(result_item, dict) and "output" in result_item:
+                    output_url = result_item["output"]
                     print(f"\n🎥 Generated Video URL: {output_url}")
                 else:
                     print("\n⚠️ Could not find output URL in result")
