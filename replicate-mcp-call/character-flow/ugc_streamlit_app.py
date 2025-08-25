@@ -17,7 +17,7 @@ load_dotenv()
 
 # Configure page
 st.set_page_config(
-    page_title="UGC Pro Studio", 
+    page_title="AI Marketing Agent Power by Portia AI", 
     page_icon="🎬", 
     layout="wide",
     initial_sidebar_state="expanded"
@@ -59,115 +59,90 @@ st.markdown(
         font-weight: 700;
         font-size: 3rem;
         text-align: center;
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
-        background-clip: text;
+        color: #ffffff;
         margin-bottom: 2rem;
         padding: 1rem 0;
-    }
-    
-    /* Ensure text is visible in dark mode */
-    @media (prefers-color-scheme: dark) {
-        .step-title, .sub-header, .option-card h3, .option-card p, .option-card li {
-            color: #ffffff !important;
-        }
-        .option-card {
-            background: #2d3748 !important;
-            border-color: #4a5568 !important;
-        }
     }
     
     .sub-header {
         font-family: 'Inter', sans-serif;
         font-weight: 500;
-        color: #2d3748 !important;
+        color: #cccccc !important;
         text-align: center;
         margin-bottom: 3rem;
         font-size: 1.2rem;
     }
-    
+
     /* Step Progress Enhancement */
     .step-container {
-        background: linear-gradient(135deg, #f7fafc 0%, #edf2f7 100%);
+        background: #000000;
         padding: 1.5rem;
         border-radius: 15px;
         border-left: 4px solid #667eea;
         margin: 2rem 0;
-        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.6);
+        color: #ffffff !important;
     }
     
     .step-title {
         font-family: 'Inter', sans-serif;
         font-weight: 600;
-        color: #e2e8f0 !important;
+        color: #ffffff !important;
         font-size: 1.4rem;
         margin-bottom: 1rem;
-        text-shadow: none;
     }
     
     /* Card Styles */
     .option-card {
-        background: white !important;
+        background: #000000 !important;
         padding: 1.5rem;
         border-radius: 12px;
-        border: 2px solid #e2e8f0;
+        border: 1px solid #333333;
         margin: 1rem 0;
         transition: all 0.3s ease;
         cursor: pointer;
-        color: #1a202c !important;
+        color: #ffffff !important;
     }
     
     .option-card h3 {
-        color: #1a202c !important;
+        color: #ffffff !important;
         font-weight: 600;
         margin-bottom: 1rem;
     }
     
-    .option-card p {
-        color: #4a5568 !important;
-        margin-bottom: 1rem;
-    }
-    
-    .option-card li {
-        color: #4a5568 !important;
-        margin: 0.5rem 0;
+    .option-card p, .option-card li {
+        color: #cccccc !important;
+        margin-bottom: 0.5rem;
     }
     
     .option-card:hover {
         border-color: #667eea;
-        box-shadow: 0 8px 25px rgba(102, 126, 234, 0.15);
+        box-shadow: 0 8px 25px rgba(102, 126, 234, 0.4);
         transform: translateY(-2px);
     }
     
     .option-card.selected {
         border-color: #667eea;
-        background: linear-gradient(135deg, #f7fafc 0%, #edf2f7 100%);
-        box-shadow: 0 4px 20px rgba(102, 126, 234, 0.2);
+        background: #111111 !important;
+        box-shadow: 0 4px 20px rgba(102, 126, 234, 0.5);
     }
     
     /* Character Grid Enhancement */
-    .character-grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-        gap: 1.5rem;
-        margin: 2rem 0;
-    }
-    
     .character-card {
-        background: white;
+        background: #000000;
         border-radius: 15px;
         padding: 1rem;
-        border: 2px solid #e2e8f0;
+        border: 1px solid #333333;
         transition: all 0.3s ease;
         text-align: center;
         cursor: pointer;
+        color: #ffffff;
     }
     
     .character-card:hover {
         border-color: #667eea;
         transform: translateY(-5px);
-        box-shadow: 0 10px 30px rgba(102, 126, 234, 0.2);
+        box-shadow: 0 10px 30px rgba(102, 126, 234, 0.4);
     }
     
     .character-card.selected {
@@ -181,25 +156,24 @@ st.markdown(
         padding: 1.5rem;
         border-radius: 12px;
         margin: 1.5rem 0;
+        background: #000000;
         border-left: 4px solid;
+        color: #ffffff;
     }
     
     .status-running {
-        background: linear-gradient(135deg, #fff3cd 0%, #fef7e0 100%);
         border-left-color: #f59e0b;
-        color: #92400e;
+        color: #facc15;
     }
     
     .status-completed {
-        background: linear-gradient(135deg, #d1fae5 0%, #ecfdf5 100%);
         border-left-color: #10b981;
-        color: #065f46;
+        color: #22c55e;
     }
     
     .status-error {
-        background: linear-gradient(135deg, #fee2e2 0%, #fef2f2 100%);
         border-left-color: #ef4444;
-        color: #991b1b;
+        color: #fca5a5;
     }
     
     /* Progress Bar Enhancement */
@@ -225,70 +199,12 @@ st.markdown(
     
     .stButton > button[kind="primary"]:hover {
         transform: translateY(-2px);
-        box-shadow: 0 8px 25px rgba(102, 126, 234, 0.3);
-    }
-    
-    /* Radio Button Enhancement */
-    .stRadio > div {
-        gap: 1rem;
-    }
-    
-    .stRadio > div > label {
-        background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%) !important;
-        padding: 1rem;
-        color: #1a202c !important;
-        border-radius: 10px;
-        border: 2px solid #cbd5e0;
-        cursor: pointer;
-        transition: all 0.3s ease;
-        font-family: 'Inter', sans-serif;
-        font-weight: 500;
-        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
-    }
-    
-    .stRadio > div > label > div {
-        color: #1a202c !important;
-    }
-    
-    .stRadio > div > label span {
-        color: #1a202c !important;
-    }
-    
-    .stRadio > div > label:hover {
-        border-color: #667eea;
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
-        color: #ffffff !important;
-        transform: translateY(-2px);
-        box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
-    }
-    
-    .stRadio > div > label:hover > div {
-        color: #ffffff !important;
-    }
-    
-    .stRadio > div > label:hover span {
-        color: #ffffff !important;
-    }
-    
-    /* Selected radio button styling */
-    .stRadio > div > label[data-checked="true"] {
-        background: linear-gradient(135deg, #10b981 0%, #059669 100%) !important;
-        border-color: #10b981;
-        color: #ffffff !important;
-        box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
-    }
-    
-    .stRadio > div > label[data-checked="true"] > div {
-        color: #ffffff !important;
-    }
-    
-    .stRadio > div > label[data-checked="true"] span {
-        color: #ffffff !important;
+        box-shadow: 0 8px 25px rgba(102, 126, 234, 0.6);
     }
     
     /* Sidebar Enhancement */
     .css-1d391kg {
-        background: linear-gradient(180deg, #f7fafc 0%, #edf2f7 100%);
+        background: #111111 !important;
     }
     
     /* Testing Button */
@@ -307,7 +223,7 @@ st.markdown(
     
     .testing-button:hover {
         transform: translateY(-2px);
-        box-shadow: 0 8px 25px rgba(255, 107, 107, 0.3);
+        box-shadow: 0 8px 25px rgba(255, 107, 107, 0.5);
     }
     
     /* Hide Streamlit Branding */
@@ -315,130 +231,12 @@ st.markdown(
     footer {visibility: hidden;}
     .stDeployButton {display: none;}
     
-    /* Force text visibility */
-    .stMarkdown p, .stMarkdown h1, .stMarkdown h2, .stMarkdown h3, .stMarkdown h4 {
-        color: inherit !important;
-    }
-    
     /* Dark theme overrides */
     .stApp {
         background-color: #0e1117;
+        color: #ffffff;
     }
     
-    /* Ensure step container text is visible */
-    .step-container p, .step-container div {
-        color: #1a202c !important;
-    }
-    
-    /* Fix radio button text visibility */
-    .stRadio label {
-        color: #f7fafc !important;
-    }
-    
-    .stRadio div[data-testid="stRadio"] > div > label > div {
-        color: #1a202c !important;
-    }
-    
-    /* Ensure all radio button text is visible */
-    div[data-testid="stRadio"] label {
-        color: #f7fafc !important;
-    }
-    
-    div[data-testid="stRadio"] label > div {
-        color: #1a202c !important;
-    }
-    
-    /* Radio button question text */
-    .stRadio > label {
-        color: #f7fafc !important;
-        font-weight: 500;
-    }
-    
-    /* All radio group labels */
-    div[role="radiogroup"] > label {
-        color: #f7fafc !important;
-    }
-    
-    /* Radio button question text - multiple selectors */
-    .stRadio > div:first-child {
-        color: #f7fafc !important;
-    }
-    
-    div[data-testid="stRadio"] > div:first-child {
-        color: #f7fafc !important;
-    }
-    
-    div[data-testid="stRadio"] > div > div:first-child {
-        color: #f7fafc !important;
-    }
-    
-    /* Target the legend element which contains the question */
-    .stRadio legend {
-        color: #f7fafc !important;
-    }
-    
-    div[data-testid="stRadio"] legend {
-        color: #f7fafc !important;
-    }
-    
-    /* Target any paragraph within radio group */
-    div[data-testid="stRadio"] p {
-        color: #f7fafc !important;
-    }
-    
-    /* Force radio button background override */
-    div[data-testid="stRadio"] > div > label {
-        background: linear-gradient(135deg, #667eea 0%, #667eea 100%) !important;
-        border: 2px solid #cbd5e0 !important;
-    }
-    
-    div[data-testid="stRadio"] > div > label:hover {
-        background: linear-gradient(135deg, #667eea 0%, #667eea 100%) !important;
-        border-color: #667eea !important;
-        color: #ffffff !important;
-    }
-    
-    div[data-testid="stRadio"] > div > label:hover > div {
-        color: #ffffff !important;
-    }
-    
-    div[data-testid="stRadio"] > div > label:hover span {
-        color: #ffffff !important;
-    }
-    
-    /* Selected state using aria-checked */
-    div[data-testid="stRadio"] > div > label[aria-checked="true"] {
-        background: linear-gradient(135deg, #10b981 0%, #059669 100%) !important;
-        border-color: #10b981 !important;
-        color: #ffffff !important;
-        box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3) !important;
-    }
-    
-    div[data-testid="stRadio"] > div > label[aria-checked="true"] > div {
-        color: #ffffff !important;
-    }
-    
-    div[data-testid="stRadio"] > div > label[aria-checked="true"] span {
-        color: #ffffff !important;
-    }
-    
-    /* Alternative selector for selected state */
-    div[data-testid="stRadio"] input[type="radio"]:checked + label {
-        background: linear-gradient(135deg, #10b981 0%, #059669 100%) !important;
-        border-color: #10b981 !important;
-        color: #ffffff !important;
-    }
-    
-    /* Force override any white backgrounds */
-    div[data-testid="stRadio"] * {
-        background-color: transparent !important;
-    }
-    
-    div[data-testid="stRadio"] > div > label * {
-        background-color: transparent !important;
-    }
-    
-    /* Content Spacing */
     .block-container {
         padding: 2rem 3rem;
         max-width: 1200px;
@@ -839,8 +637,8 @@ def stream_ugc_execution(payload: Dict[str, Any]):
 # Main title with subtitle
 st.markdown(
     '''
-    <div class="main-header">🎬 UGC Pro Studio</div>
-    <div class="sub-header">Create stunning UGC ads and social media content with AI</div>
+    <div class="main-header"> AI Marketing Agent Power by Portia AI</div>
+    <div class="sub-header"> Create stunning UGC ads and social media content with AI</div>
     ''',
     unsafe_allow_html=True,
 )
@@ -858,23 +656,22 @@ if not st.session_state.api_status_checked:
         st.session_state.api_status_checked = check_api_health()
         st.rerun()
     st.stop()
-else:
-    st.success("✅ API Server is running")
 
-# 🚀 TESTING SHORTCUT - Add a quick test button
-st.markdown("---")
-if st.button("🧪 **TESTING: Jump to Social Media Sharing**", type="primary"):
-    # Set up hardcoded values for testing
-    st.session_state.ad_type_choice = "1"  # UGC Ad
-    st.session_state.current_step = "social_sharing"
-    st.session_state.execution_status = "idle"
-    st.session_state.final_video_url = "https://replicate.delivery/pbxt/abc123/output.mp4"  # Fake video URL for testing
-    st.session_state.generated_product_description = "Amazing UGC Video Product - showcases the best features"
-    st.session_state.generated_dialog = "Check out this amazing product! It's absolutely fantastic and I love using it every day."
-    st.session_state.show_social_sharing = True
-    st.rerun()
+# st.markdown("---")
 
-st.markdown("---")
+
+# if st.button("🧪 **TESTING: Jump to Social Media Sharing**", type="primary"):
+#     # Set up hardcoded values for testing
+#     st.session_state.ad_type_choice = "1"  # UGC Ad
+#     st.session_state.current_step = "social_sharing"
+#     st.session_state.execution_status = "idle"
+#     st.session_state.final_video_url = "https://replicate.delivery/pbxt/abc123/output.mp4"  # Fake video URL for testing
+#     st.session_state.generated_product_description = "Amazing UGC Video Product - showcases the best features"
+#     st.session_state.generated_dialog = "Check out this amazing product! It's absolutely fantastic and I love using it every day."
+#     st.session_state.show_social_sharing = True
+#     st.rerun()
+
+# st.markdown("---")
 
 # Show progress
 if st.session_state.ad_type_choice == "1":  # UGC Ad
@@ -918,7 +715,7 @@ st.write(
 
 # Step 0: Ad Type Selection
 if st.session_state.current_step == "ad_type_selection":
-    st.markdown('<div class="step-title">Choose Your Ad Type</div>', unsafe_allow_html=True)
+    st.markdown('<div class="step-title" style="color:#ffffff;">Choose Your Ad Type</div>', unsafe_allow_html=True)
     st.markdown('<p style="color: #4a5568 !important; font-size: 1.1rem; margin-bottom: 2rem;">Select the type of advertisement you\'d like to create</p>', unsafe_allow_html=True)
     
     # Create two columns for ad type cards
@@ -1069,7 +866,7 @@ elif st.session_state.current_step == "character_selection":
 
 # Step 2: Product Image
 elif st.session_state.current_step == "product_image":
-    st.markdown('<div class="step-container">', unsafe_allow_html=True)
+    # st.markdown('<div class="step-container">', unsafe_allow_html=True)
     st.markdown('<div class="step-title">📸 Product Image</div>', unsafe_allow_html=True)
     
     # Show different messaging based on ad type
@@ -1215,19 +1012,19 @@ elif st.session_state.current_step == "ad_prompt":
     st.markdown("Create a compelling prompt to generate your product advertisement")
     
     st.markdown(
-        '''
-        <div style="background: linear-gradient(135deg, #f7fafc 0%, #edf2f7 100%); 
-                    padding: 1.5rem; border-radius: 12px; margin: 1.5rem 0;
-                    border-left: 4px solid #667eea;">
-            <h4 style="color: #2d3748; margin-bottom: 1rem;">💡 Prompt Guidelines</h4>
-            <p style="margin: 0.5rem 0;">• Describe the video style and mood</p>
-            <p style="margin: 0.5rem 0;">• Mention key features to highlight</p>
-            <p style="margin: 0.5rem 0;">• Specify camera angles or movements</p>
-            <p style="margin: 0.5rem 0;">• Include lighting or atmosphere preferences</p>
-        </div>
-        ''',
-        unsafe_allow_html=True
-    )
+    '''
+    <div style="background: #000000; 
+                padding: 1.5rem; border-radius: 12px; margin: 1.5rem 0;
+                border-left: 4px solid #667eea; color: #ffffff; text-align: left;">
+        <h4 style="color: #ffffff; margin-bottom: 1rem; text-align: left;">💡 Prompt Guidelines</h4>
+        <p style="margin: 0.5rem 0;">• Describe the video style and mood</p>
+        <p style="margin: 0.5rem 0;">• Mention key features to highlight</p>
+        <p style="margin: 0.5rem 0;">• Specify camera angles or movements</p>
+        <p style="margin: 0.5rem 0;">• Include lighting or atmosphere preferences</p>
+    </div>
+    ''',
+    unsafe_allow_html=True
+)
     
     ad_prompt = st.text_area(
         "🎯 Enter your ad prompt:",
@@ -1454,10 +1251,16 @@ elif st.session_state.current_step == "execution":
         else:
             st.markdown(
                 '''
-                <div class="status-completed">
-                    <h3 style="margin: 0; color: #065f46;">🎉 Product Ad Generation Completed!</h3>
-                    <p style="margin: 0.5rem 0 0 0; color: #065f46;">Your product advertisement has been successfully created.</p>
-                </div>
+        <div style="background:#000000; 
+            padding:1.2rem; 
+            border-radius:12px; 
+            margin:1.5rem 0; 
+            border:1px solid #333333;">
+    <h3 style="margin:0; color:#22c55e;">🎉 Product Ad Generation Completed!</h3>
+    <p style="margin:0.5rem 0 0 0; color:#ffffff; text-align:left;">
+        Your product advertisement has been successfully created.
+        </p>
+        </div>
                 ''',
                 unsafe_allow_html=True
             )
@@ -1470,16 +1273,18 @@ elif st.session_state.current_step == "execution":
         if st.session_state.final_video_url:
             st.markdown(
                 '''
-                <div style="background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
-                            padding: 2rem; border-radius: 15px; margin: 2rem 0;
-                            border: 1px solid #e2e8f0;">
-                    <h3 style="color: #1e293b; margin-bottom: 1rem; text-align: center;">🎥 Your Generated Video</h3>
-                </div>
+<div style="background:#000000;
+            padding:2rem; border-radius:15px; margin:2rem 0;
+            border:1px solid #333333;">
+    <h3 style="color:#ffffff; margin-bottom:1rem; text-align:center;">
+        🎥 Your Generated Video
+    </h3>
+</div>
                 ''',
                 unsafe_allow_html=True
             )
             st.video(st.session_state.final_video_url)
-            st.success(f"📹 **Video URL:** {st.session_state.final_video_url}")
+            # st.success(f"📹 **Video URL:** {st.session_state.final_video_url}")
         else:
             st.info("✅ Plan execution completed. Check the events log for details.")
             if st.session_state.prediction_id:
