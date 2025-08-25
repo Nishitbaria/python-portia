@@ -610,7 +610,7 @@ def stream_ugc_execution_realtime(payload: Dict[str, Any], status_placeholder, p
             f"{API_BASE_URL}/execute-ugc-realtime",
             json=payload,
             stream=True,
-            timeout=600,  # 10 minute timeout
+            timeout=1200,  # 10 minute timeout
         )
 
         response.raise_for_status()
@@ -773,7 +773,7 @@ def stream_product_ad_execution(payload: Dict[str, Any], status_placeholder, pro
         response = requests.post(
             f"{API_BASE_URL}/execute-product-ad",
             json=payload,
-            timeout=600,  # 10 minute timeout
+            timeout=1200,  # 10 minute timeout
         )
 
         response.raise_for_status()
@@ -1655,7 +1655,7 @@ elif st.session_state.current_step == "social_sharing":
                     f"{API_BASE_URL}/execute-social-scheduler-realtime",
                     json=social_data,
                     stream=True,
-                    timeout=300
+                    timeout=600
                 )
                 
                 if response.status_code == 200:

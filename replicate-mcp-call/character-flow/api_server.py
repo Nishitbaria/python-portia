@@ -484,7 +484,7 @@ async def execute_ugc(request: UGCGeneratorRequest):
 
                 with concurrent.futures.ThreadPoolExecutor() as executor:
                     future = executor.submit(poll_video_sync)
-                    final_video_result = future.result(timeout=120)  # 2 minute timeout
+                    final_video_result = future.result(timeout=1200)  # 2 minute timeout
 
                 if (
                     final_video_result
@@ -1000,7 +1000,7 @@ async def execute_social_scheduler_simple(request: SocialSchedulerRequest):
                 )
 
             future = executor.submit(run_scheduler_plan)
-            scheduler_run = future.result(timeout=180)  # 3 minute timeout
+            scheduler_run = future.result(timeout=600)  # 3 minute timeout
 
         if scheduler_run.state != PlanRunState.COMPLETE:
             raise Exception(f"Social scheduler failed with state: {scheduler_run.state}")
@@ -1052,7 +1052,7 @@ async def execute_social_scheduler_simple(request: SocialSchedulerRequest):
                 )
 
             future = executor.submit(run_sheets_plan)
-            sheets_run = future.result(timeout=60)  # 1 minute timeout
+            sheets_run = future.result(timeout=180)  # 1 minute timeout
 
         # Return the complete result
         return {
@@ -1100,7 +1100,7 @@ async def execute_social_scheduler(request: SocialSchedulerRequest):
                 )
 
             future = executor.submit(run_social_plan)
-            caption_run = future.result(timeout=120)  # 2 minute timeout
+            caption_run = future.result(timeout=600)  # 2 minute timeout
 
         generated_captions = caption_run.outputs.final_output.value
 
@@ -1339,7 +1339,7 @@ async def execute_social_scheduler_realtime(request: SocialSchedulerRequest):
 
             with concurrent.futures.ThreadPoolExecutor() as executor:
                 future = executor.submit(run_sheets)
-                sheets_run = future.result(timeout=60)
+                sheets_run = future.result(timeout=180)
 
             # Send final result
             result = {
