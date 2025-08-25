@@ -10,10 +10,28 @@ import cloudinary.uploader
 import os
 import re
 from io import BytesIO
-from dotenv import load_dotenv
+import toml
 
-# Load environment variables
-load_dotenv()
+# Load configuration from TOML file
+def load_config():
+    config_path = os.path.join(os.path.dirname(__file__), 'config.toml')
+    try:
+        with open(config_path, 'r') as f:
+            return toml.load(f)
+    except FileNotFoundError:
+        # Fallback to environment variables if config.toml doesn't exist
+        return {
+            'cloudinary': {
+                'cloud_name': os.getenv('CLOUDINARY_CLOUD_NAME', ''),
+                'api_key': os.getenv('CLOUDINARY_API_KEY', ''),
+                'api_secret': os.getenv('CLOUDINARY_API_SECRET', '')
+            },
+        }
+
+config = load_config()
+
+# Load environment variables (kept for backward compatibility)
+# load_dotenv()
 
 # Configure page
 st.set_page_config(
@@ -23,15 +41,15 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Configure Cloudinary with environment variables
+# Configure Cloudinary with TOML configuration
 cloudinary.config(
-    cloud_name=os.getenv("CLOUDINARY_CLOUD_NAME"),
-    api_key=os.getenv("CLOUDINARY_API_KEY"),
-    api_secret=os.getenv("CLOUDINARY_API_SECRET"),
+    cloud_name=config['cloudinary']['cloud_name'],
+    api_key=config['cloudinary']['api_key'],
+    api_secret=config['cloudinary']['api_secret'],
 )
 
 # API Configuration
-API_BASE_URL = "http://134.209.146.64"
+API_BASE_URL = config.get('api', {}).get('base_url', "http://134.209.146.64")
 
 # Predefined character URLs
 PREDEFINED_CHARACTERS = [
@@ -304,11 +322,12 @@ def upload_to_cloudinary(uploaded_file):
     """Upload file to Cloudinary and return URL"""
     try:
         # Check if Cloudinary is configured
+        cloudinary_config = config.get('cloudinary', {})
         if not all(
             [
-                os.getenv("CLOUDINARY_CLOUD_NAME"),
-                os.getenv("CLOUDINARY_API_KEY"),
-                os.getenv("CLOUDINARY_API_SECRET"),
+                cloudinary_config.get('cloud_name'),
+                cloudinary_config.get('api_key'),
+                cloudinary_config.get('api_secret'),
             ]
         ):
             st.error(
@@ -1753,7 +1772,8 @@ with st.sidebar:
     st.write("---")
 
    
-    cloudinary_status = '✅' if all([os.getenv('CLOUDINARY_CLOUD_NAME'), os.getenv('CLOUDINARY_API_KEY'), os.getenv('CLOUDINARY_API_SECRET')]) else '❌'
+    cloudinary_config = config.get('cloudinary', {})
+    cloudinary_status = '✅' if all([cloudinary_config.get('cloud_name'), cloudinary_config.get('api_key'), cloudinary_config.get('api_secret')]) else '❌'
     # ✅ Cloudinary Configuration
     st.markdown(
         f'''
