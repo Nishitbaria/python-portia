@@ -14,6 +14,10 @@ import time
 import traceback
 import concurrent.futures
 from portia.execution_hooks import ExecutionHooks as BaseExecutionHooks
+from portia import PlanBuilderV2, Input
+from portia.builder.reference import StepOutput
+from pydantic import BaseModel
+import concurrent.futures
 
 # Import from main.py
 from main import (
@@ -115,6 +119,10 @@ class StepOutput(BaseModel):
     step_name: str
     output: str
     status: str
+
+class PredictionPolling(BaseModel):
+    id:str
+    status:str
 
 
 class UGCGeneratorResponse(BaseModel):
@@ -856,13 +864,19 @@ async def execute_product_ad(request: ProductAdRequest):
             nonlocal result, execution_error
             try:
                 logger.info("Executing Product Ad generation in separate thread")
-                result = generate_product_ad()  # This will use the input prompts
+                # result = generate_product_ad()  # This will use the input prompts - REMOVED: was causing terminal input prompts
 
-                # For API integration, we need to modify generate_product_ad to accept parameters
-                # For now, let's create a wrapper that calls the function with the provided parameters
-                from portia import PlanBuilderV2, Input
+                # Import required modules
+                
+                # Pydantic schema for Product Ad prediction output
+                class ProductAdPrediction(BaseModel):
+                    """Product Ad Prediction model"""
+                    product_url: str
+                    ad_prompt: str
+                    id: str
+                    status: str
 
-                # Create product ad generation plan (similar to main.py)
+                # Create product ad generation plan with LLM step (like UGC)
                 product_ad_plan = (
                     PlanBuilderV2("Product Ad Generator")
                     .input(name="product_url", description="Product image URL")
@@ -886,12 +900,21 @@ async def execute_product_ad(request: ProductAdRequest):
                         }
                         
                         DO NOT OMIT THE "version" FIELD. It is required.
-                        Return ONLY the id and status from the response.
+                        ONLY RETURN "id" and "status" in the output JSON.
+                        EXAMPLE OUTPUT:
+                        {
+                            "id": "example-id-123456",
+                            "status": "starting"
+                        }
                         """,
                         inputs=[Input("product_url"), Input("ad_prompt")],
                         step_name="generate_product_ad",
+                        output_schema=PredictionPolling,
+
                     )
-                    .final_output()
+                    .final_output(
+                        output_schema=UGC_Prediction,
+                    )
                     .build()
                 )
 
@@ -903,38 +926,63 @@ async def execute_product_ad(request: ProductAdRequest):
 
                 plan_run = portia.run_plan(product_ad_plan, plan_run_inputs=plan_inputs)
 
-                # Extract prediction ID and status
-                final_output = plan_run.outputs.final_output.value
-                prediction_id, prediction_status = extract_id_and_status(final_output)
+                # Extract prediction data from final output
+                prediction_output = plan_run.outputs.final_output.value
+                prediction_id = prediction_output.id if hasattr(prediction_output, 'id') else None
+                prediction_status = prediction_output.status if hasattr(prediction_output, 'status') else None
+
+                logger.info(
+                    f"Product Ad extracted - ID: {prediction_id}, Status: {prediction_status}"
+                )
 
                 if prediction_id:
                     logger.info(
                         f"Product Ad generation started with prediction ID: {prediction_id}"
                     )
 
-                    # Poll for completion
-                    final_result = poll_prediction_until_complete(portia, prediction_id)
+                    # Poll in separate thread with timeout (same as UGC)
+                    def poll_product_ad_sync():
+                        return poll_prediction_until_complete(portia, prediction_id)
 
-                    if final_result:
-                        # Extract video URL
-                        video_url = None
-                        if isinstance(final_result, list) and len(final_result) > 0:
-                            result_item = final_result[0]
-                            if (
-                                isinstance(result_item, dict)
-                                and "output" in result_item
-                            ):
-                                video_url = result_item["output"]
+                    with concurrent.futures.ThreadPoolExecutor() as executor:
+                        future = executor.submit(poll_product_ad_sync)
+                        final_result = future.result(timeout=1200)  # 20 minute timeout
 
-                        result = {
-                            "prediction_id": prediction_id,
-                            "status": "completed",
-                            "video_url": video_url,
-                            "full_result": final_result,
-                            "product_url": request.product_url,
-                            "ad_prompt": request.ad_prompt,
-                        }
+                    if (
+                        final_result
+                        and isinstance(final_result, list)
+                        and len(final_result) > 0
+                    ):
+                        result_item = final_result[0]
+                        if isinstance(result_item, dict) and "output" in result_item:
+                            video_url = result_item["output"]
+                            logger.info(
+                                f"Product Ad generation completed successfully: {video_url}"
+                            )
+                            
+                            result = {
+                                "prediction_id": prediction_id,
+                                "status": "completed",
+                                "video_url": video_url,
+                                "full_result": final_result,
+                                "product_url": request.product_url,
+                                "ad_prompt": request.ad_prompt,
+                            }
+                        else:
+                            logger.warning(
+                                "Product Ad result format unexpected - no output field found"
+                            )
+                            result = {
+                                "prediction_id": prediction_id,
+                                "status": "failed",
+                                "error": "Video result format unexpected",
+                                "product_url": request.product_url,
+                                "ad_prompt": request.ad_prompt,
+                            }
                     else:
+                        logger.warning(
+                            "Product Ad generation failed or returned unexpected format"
+                        )
                         result = {
                             "prediction_id": prediction_id,
                             "status": "failed",
@@ -945,9 +993,10 @@ async def execute_product_ad(request: ProductAdRequest):
                 else:
                     result = {
                         "status": "failed",
-                        "error": "Could not extract prediction ID",
+                        "error": "Could not extract prediction ID from LLM output",
                         "product_url": request.product_url,
                         "ad_prompt": request.ad_prompt,
+                        "llm_output": str(prediction_output) if prediction_output else "No output",
                     }
 
             except Exception as e:

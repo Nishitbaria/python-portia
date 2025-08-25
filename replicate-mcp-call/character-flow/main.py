@@ -391,7 +391,7 @@ def extract_id_and_status(value):
 
 
 def poll_prediction_until_complete(
-    portia, prediction_id, max_attempts=30, delay_seconds=2
+    portia, prediction_id, max_attempts=300, delay_seconds=2
 ):
     """Poll a Replicate prediction until it's complete"""
     import time
@@ -600,6 +600,9 @@ class UGC_Prediction(BaseModel):
     id: str
     status: str
 
+class PredictionPolling(BaseModel):
+    id:str
+    status:str
 
 class PredictionStatus(BaseModel):
     """Model for prediction status polling"""
@@ -816,7 +819,7 @@ Return only the dialog text as a string.""",
 
         Call the tool with this EXACT structure and parameter mapping:
         {
-          "version": "1fb1d9f3ffb5da9774c24ce528c54c916d8d6cd63af866fe2afe85e44fb99999",
+          "version": "07a0f547a5c73f587de8251543f9f07e7b38fc4b3af7512bfaeebba428216270",
           "input": {
             "avatar_image": [use the character_url_final output - this is the character/avatar image URL],
             "product_image": [use the product_url input - this is the product image URL],
@@ -831,6 +834,12 @@ Return only the dialog text as a string.""",
                 
         DO NOT OMIT THE "version" FIELD. It is required.
         DOUBLE CHECK: product_description gets the product description, dialogs gets the dialog text.
+        ONLY RETURN "id" and "status" in the output JSON.
+        EXAMPLE OUTPUT:
+        {
+            "id": "example-id-123456",
+            "status": "starting"
+        }
         """,
         inputs=[
             StepOutput("character_url_final"),
@@ -839,21 +848,20 @@ Return only the dialog text as a string.""",
             StepOutput("generate_final_dialog"),
         ],
         step_name="generate_ugc",
+        output_schema=PredictionPolling,
     )
     .llm_step(
         task="""
         Your task is to extract the id and status field from this {generate_ugc} and combine it with other data.
         
         Steps:
-        1. Look at the generate_ugc output and find the actual JSON data inside it
-        2. Extract the real "id" and "status" values from that JSON (ignore any examples)
-        3. Create a structured object with these 6 fields:
+        1. Create a structured object with these 6 fields:
            - product_description: [use the generate_product_description.description output]
            - dialog: [use the generate_final_dialog.dialog output] 
            - character_url: [use the character_url_final output]
            - product_url: [use the product_url input]
-           - id: [the ACTUAL prediction ID from the UGC response]
-           - status: [the ACTUAL status from the UGC response]
+           - id: [the id from the {generate_ugc}]
+           - status: [the status status from the {generate_ugc}]
         
         CRITICAL: Do NOT use example IDs or placeholder text. Use only the real data from the inputs.
         Return ONLY the structured object with these 6 fields as JSON.
