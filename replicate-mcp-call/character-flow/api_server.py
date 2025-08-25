@@ -891,7 +891,7 @@ async def execute_product_ad(request: ProductAdRequest):
                           "version": "7428dcc4cdb6d758301c2ae57ca01279e9b6899c5cb01f18f4d577c412b14390",
                           "input": {
                             "prompt": [use the ad_prompt input],
-                            "lighting": "auto",
+                            "lighting": "studio",
                             "audio_mode": "off",
                             "image_style": "studio",
                             "camera_movement": "auto",
@@ -906,7 +906,7 @@ async def execute_product_ad(request: ProductAdRequest):
                           "version": "7428dcc4cdb6d758301c2ae57ca01279e9b6899c5cb01f18f4d577c412b14390",
                           "input": {
                             "prompt": [use the ad_prompt input],
-                            "lighting": "auto",
+                            "lighting": "studio",
                             "audio_mode": "off",
                             "image_style": "studio",
                             "camera_movement": "auto"
