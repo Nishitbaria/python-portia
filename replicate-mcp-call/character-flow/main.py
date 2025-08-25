@@ -43,6 +43,8 @@ class FinalOutput(BaseModel):
 
 def validate_url(url):
     """Basic URL validation"""
+    if url is None:
+        return False
     return url.startswith("http://") or url.startswith("https://")
 
 

@@ -897,7 +897,7 @@ if st.session_state.ad_type_choice == "1":  # UGC Ad
 elif st.session_state.ad_type_choice == "2":  # Product Ad
     steps = [
         "Ad Type Selection",
-        "Product Image",
+        "Product Image (Optional)",
         "Ad Prompt",
         "Execute & Monitor",
     ]
@@ -1069,12 +1069,23 @@ elif st.session_state.current_step == "character_selection":
 
 # Step 2: Product Image
 elif st.session_state.current_step == "product_image":
+    st.markdown('<div class="step-container">', unsafe_allow_html=True)
     st.markdown('<div class="step-title">📸 Product Image</div>', unsafe_allow_html=True)
-    st.markdown("Provide your product image to create stunning advertisement content")
+    
+    # Show different messaging based on ad type
+    if st.session_state.ad_type_choice == "1":  # UGC Ad
+        st.markdown("Provide your product image to create stunning advertisement content")
+        product_options = ["📁 Upload file here", "🔗 Enter URL directly"]
+        is_image_optional = False
+    else:  # Product Ad
+        st.markdown("Provide your product image to create stunning advertisement content, or skip for text-only ads")
+        st.info("💡 **Note**: Product image is optional for Product Ads. You can create text-only video advertisements without an image.")
+        product_options = ["📁 Upload file here", "🔗 Enter URL directly", "⏭️ Skip image (text-only ad)"]
+        is_image_optional = True
 
     product_option = st.radio(
         "How would you like to provide your product image?",
-        ["📁 Upload file here", "🔗 Enter URL directly"],
+        product_options,
         key="product_option_radio",
     )
 
@@ -1100,7 +1111,7 @@ elif st.session_state.current_step == "product_image":
                         st.session_state.current_step = "ad_prompt"
                     st.rerun()
 
-    else:  # Enter URL directly
+    elif product_option == "🔗 Enter URL directly":
         product_url = st.text_input(
             "Enter the product image URL:",
             key="product_url_input",
@@ -1124,6 +1135,18 @@ elif st.session_state.current_step == "product_image":
                 st.error(
                     "❌ Please enter a valid URL (must start with http:// or https://)"
                 )
+    
+    elif product_option == "⏭️ Skip image (text-only ad)" and st.session_state.ad_type_choice == "2":
+        # Only available for Product Ads
+        st.markdown("### ⏭️ Text-Only Advertisement")
+        st.markdown("Create a video advertisement using only text prompts without any product image")
+        st.info("💡 Your ad will be generated based purely on your text description, perfect for conceptual or text-based products.")
+        
+        if st.button("Continue without Image", type="primary", use_container_width=True):
+            st.session_state.flow_data["product_image_source"] = "none"
+            st.session_state.flow_data["product_url"] = None  # No product URL
+            st.session_state.current_step = "ad_prompt"
+            st.rerun()
 
     # Back button - depends on ad type
     if st.session_state.ad_type_choice == "1":  # UGC Ad

@@ -98,7 +98,7 @@ class UGCGeneratorRequest(BaseModel):
 
 # Product Ads Request Models
 class ProductAdRequest(BaseModel):
-    product_url: str  # Product image URL
+    product_url: Optional[str] = None  # Product image URL (now optional)
     ad_prompt: str  # Custom prompt for the product ad
 
 
@@ -183,8 +183,8 @@ def validate_ugc_request(request: UGCGeneratorRequest):
 
 def validate_product_ad_request(request: ProductAdRequest):
     """Validate Product Ad request"""
-    # Validate product URL
-    if not validate_url(request.product_url):
+    # Validate product URL (now optional)
+    if request.product_url is not None and not validate_url(request.product_url):
         raise ValueError("Invalid product URL")
 
     # Validate ad prompt
@@ -871,20 +871,22 @@ async def execute_product_ad(request: ProductAdRequest):
                 # Pydantic schema for Product Ad prediction output
                 class ProductAdPrediction(BaseModel):
                     """Product Ad Prediction model"""
-                    product_url: str
+                    product_url: Optional[str]  # Made optional
                     ad_prompt: str
                     id: str
                     status: str
 
-                # Create product ad generation plan with LLM step (like UGC)
+                # Create product ad generation plan with optional image
                 product_ad_plan = (
                     PlanBuilderV2("Product Ad Generator")
-                    .input(name="product_url", description="Product image URL")
+                    .input(name="product_url", description="Product image URL (optional)")
                     .input(name="ad_prompt", description="Ad prompt from user")
                     .single_tool_agent_step(
                         tool="portia:mcp:custom:mcp.replicate.com:create_predictions",
                         task="""
-                        Call the Replicate tool with this EXACT structure:
+                        Call the Replicate tool with this structure. 
+                        
+                        IF product_url is provided (not empty/null):
                         {
                           "version": "7428dcc4cdb6d758301c2ae57ca01279e9b6899c5cb01f18f4d577c412b14390",
                           "input": {
@@ -899,6 +901,21 @@ async def execute_product_ad(request: ProductAdRequest):
                           "Prefer": "wait=1"
                         }
                         
+                        IF product_url is empty/null (text-only ad):
+                        {
+                          "version": "7428dcc4cdb6d758301c2ae57ca01279e9b6899c5cb01f18f4d577c412b14390",
+                          "input": {
+                            "prompt": [use the ad_prompt input],
+                            "lighting": "auto",
+                            "audio_mode": "off",
+                            "image_style": "studio",
+                            "camera_movement": "auto"
+                          },
+                          "jq_filter": "{id: .id, status: .status}",
+                          "Prefer": "wait=1"
+                        }
+                        
+                        DO NOT include "reference_image" field if product_url is empty.
                         DO NOT OMIT THE "version" FIELD. It is required.
                         ONLY RETURN "id" and "status" in the output JSON.
                         EXAMPLE OUTPUT:
@@ -920,7 +937,7 @@ async def execute_product_ad(request: ProductAdRequest):
 
                 # Run the product ad plan
                 plan_inputs = {
-                    "product_url": request.product_url,
+                    "product_url": request.product_url or "",  # Convert None to empty string
                     "ad_prompt": request.ad_prompt,
                 }
 
