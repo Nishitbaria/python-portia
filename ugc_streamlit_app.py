@@ -31,7 +31,7 @@ cloudinary.config(
 )
 
 # API Configuration
-API_BASE_URL = "http://localhost:8000"
+API_BASE_URL = "http://134.209.146.64"
 
 # Predefined character URLs
 PREDEFINED_CHARACTERS = [
