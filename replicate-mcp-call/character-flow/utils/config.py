@@ -81,24 +81,12 @@ Example payload:
 )
 
 def get_portia_with_custom_tools():
-    """Get Portia instance with custom tools registered"""
-    # Import here to avoid circular imports
-    from social_scheduler import ContentValidationTool, TimeSchedulingTool, ContentRevisionTool
-    
-    # Create custom tool registry
-    custom_tool_registry = InMemoryToolRegistry.from_local_tools([
-        ContentValidationTool(),
-        TimeSchedulingTool(),
-        ContentRevisionTool()
-    ])
-    
-    # Combine registries
-    combined_registry = mcp_tool_registry + custom_tool_registry
-    
+    """Get Portia instance with MCP tools (custom tools removed)"""
+    # No custom tools needed anymore - just return Portia with MCP tools
     return Portia(
         config=openai_config,
         execution_hooks=ExecutionHooks(),
-        tools=combined_registry
+        tools=mcp_tool_registry
     )
 
 # Create the default Portia instance (without custom tools for now)
