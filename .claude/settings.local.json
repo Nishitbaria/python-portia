@@ -1,9 +1,0 @@
-{
-  "permissions": {
-    "allow": [
-      "WebFetch(domain:docs.portialabs.ai)"
-    ],
-    "deny": [],
-    "ask": []
-  }
-}

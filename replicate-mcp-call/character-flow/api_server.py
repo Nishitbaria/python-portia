@@ -13,6 +13,7 @@ import queue
 import time
 import traceback
 import concurrent.futures
+from portia.execution_hooks import ExecutionHooks as BaseExecutionHooks
 
 # Import from main.py
 from main import (
@@ -42,12 +43,8 @@ from social_scheduler import (
     ChannelDetection,
     CaptionGeneration,
     SchedulingData,
-    ContentValidationTool,
-    TimeSchedulingTool,
-    ContentRevisionTool,
     social_scheduler_plan,
-    create_content_validation_plan,
-    create_time_scheduling_plan,
+    create_simple_social_scheduler_plan,
     create_sheets_integration_plan,
     convert_natural_time_to_iso,
 )
@@ -75,9 +72,9 @@ def safe_json_dumps(data):
     return json.dumps(data, default=json_encoder)
 
 
-# Global storage for running plan runs and their clarifications
+# Global storage for running plan runs (clarifications removed)
 running_plans = {}
-plan_clarifications = {}
+# plan_clarifications removed - no longer needed without clarifications
 
 
 # Request models
@@ -92,9 +89,7 @@ class UGCGeneratorRequest(BaseModel):
     dialog_system_prompt: Optional[str] = DIALOG_GENERATION_SYSTEM_PROMPT
 
 
-class ClarificationResponse(BaseModel):
-    clarification_id: str
-    response: str
+# ClarificationResponse model removed - no longer needed without clarifications
 
 
 # Product Ads Request Models
@@ -111,10 +106,7 @@ class SocialSchedulerRequest(BaseModel):
     dialog: str  # Dialog text from UGC
 
 
-class SocialClarificationResponse(BaseModel):
-    plan_run_id: str
-    clarification_argument: str
-    response: str
+# SocialClarificationResponse model removed - no longer needed without clarifications
 
 
 # Response models
@@ -256,39 +248,10 @@ async def stream_ugc_execution(
 
         # Stream execution steps
         while not execution_completed:
+            # Clarification handling removed - no longer needed
             if plan_run.state == PlanRunState.NEED_CLARIFICATION:
-                logger.info(f"Plan {plan_run_id} needs clarification")
-                try:
-                    clarifications = plan_run.get_outstanding_clarifications()
-                    clarification_data = []
-
-                    for clarification in clarifications:
-                        clar_info = {
-                            "id": str(clarification.id),
-                            "category": str(clarification.category),
-                            "user_guidance": clarification.user_guidance,
-                        }
-
-                        # Add additional fields based on clarification type
-                        if hasattr(clarification, "argument_name"):
-                            clar_info["argument_name"] = clarification.argument_name
-                        if hasattr(clarification, "options"):
-                            clar_info["options"] = clarification.options
-
-                        clarification_data.append(clar_info)
-
-                        # Store clarification for later resolution
-                        plan_clarifications[str(clarification.id)] = {
-                            "clarification": clarification,
-                            "plan_run": plan_run,
-                        }
-
-                    yield f"data: {safe_json_dumps({'type': 'clarification_needed', 'plan_run_id': plan_run_id, 'clarifications': clarification_data})}\n\n"
-                except Exception as e:
-                    logger.error(
-                        f"Error handling clarifications for plan {plan_run_id}: {str(e)}"
-                    )
-                    yield f"data: {safe_json_dumps({'type': 'clarification_error', 'plan_run_id': plan_run_id, 'error': str(e)})}\n\n"
+                logger.warning(f"Plan {plan_run_id} needs clarification but clarifications are disabled")
+                yield f"data: {safe_json_dumps({'type': 'error', 'plan_run_id': plan_run_id, 'error': 'Clarifications are no longer supported'})}\n\n"
                 break
 
             elif plan_run and plan_run.state == PlanRunState.IN_PROGRESS:
@@ -571,53 +534,7 @@ async def execute_ugc_stream(request: UGCGeneratorRequest):
     )
 
 
-@app.post("/resolve-clarification/{plan_run_id}")
-async def resolve_clarification(
-    plan_run_id: str, clarification_response: ClarificationResponse
-):
-    """Resolve a clarification and resume plan execution"""
-    try:
-        clarification_id = clarification_response.clarification_id
-
-        if clarification_id not in plan_clarifications:
-            raise HTTPException(
-                status_code=404, detail=f"Clarification {clarification_id} not found"
-            )
-
-        clarification_data = plan_clarifications[clarification_id]
-        clarification = clarification_data["clarification"]
-        plan_run = clarification_data["plan_run"]
-
-        def resolve_and_resume():
-            # Resolve the clarification
-            updated_plan_run = portia.resolve_clarification(
-                clarification, clarification_response.response, plan_run
-            )
-
-            # Resume the plan run
-            resumed_plan_run = portia.resume(updated_plan_run)
-            return resumed_plan_run
-
-        # Run in separate thread to avoid event loop conflicts
-        with concurrent.futures.ThreadPoolExecutor() as executor:
-            future = executor.submit(resolve_and_resume)
-            resumed_plan_run = future.result()
-
-        # Update stored plan run
-        running_plans[plan_run_id] = resumed_plan_run
-
-        # Clean up the clarification
-        del plan_clarifications[clarification_id]
-
-        return {
-            "status": "resolved",
-            "plan_run_id": plan_run_id,
-            "clarification_id": clarification_id,
-            "new_state": str(resumed_plan_run.state),
-        }
-
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+# resolve_clarification endpoint removed - no longer needed without clarifications
 
 
 @app.get("/plan-status/{plan_run_id}")
@@ -632,7 +549,7 @@ async def get_plan_status(plan_run_id: str):
         "plan_run_id": plan_run_id,
         "state": str(plan_run.state),
         "current_step_index": getattr(plan_run, "current_step_index", 0),
-        "has_clarifications": len(plan_run.get_outstanding_clarifications()) > 0,
+        "has_clarifications": False,  # Clarifications removed
     }
 
 
@@ -741,21 +658,17 @@ async def execute_ugc_realtime(request: UGCGeneratorRequest):
                         portia.execution_hooks = original_hooks
 
                     # Handle clarifications
-                    while plan_run_result.state == PlanRunState.NEED_CLARIFICATION:
-                        clarifications = (
-                            plan_run_result.get_outstanding_clarifications()
+                    # Clarification handling removed - no longer needed
+                    if plan_run_result.state == PlanRunState.NEED_CLARIFICATION:
+                        logger.warning(f"Plan needs clarification but clarifications are disabled")
+                        event_queue.put(
+                            {
+                                "type": "error",
+                                "plan_run_id": str(plan_run_result.id),
+                                "message": "Clarifications are no longer supported",
+                            }
                         )
-                        for clarification in clarifications:
-                            event_queue.put(
-                                {
-                                    "type": "clarification_needed",
-                                    "clarification_id": str(clarification.id),
-                                    "user_guidance": clarification.user_guidance,
-                                    "plan_run_id": str(plan_run_result.id),
-                                    "message": "Clarification needed - execution paused",
-                                }
-                            )
-                        break
+                        return  # Exit the function since we can't handle clarifications
 
                     if plan_run_result.state == PlanRunState.COMPLETE:
                         # Extract final output and prediction ID
@@ -1059,6 +972,105 @@ async def execute_product_ad(request: ProductAdRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.post("/execute-social-scheduler-simple")
+async def execute_social_scheduler_simple(request: SocialSchedulerRequest):
+    """Execute simplified social scheduler workflow without clarifications"""
+    try:
+        logger.info(
+            f"Starting simple social scheduler execution for request: {request.model_dump()}"
+        )
+
+        # Get Portia instance with custom tools
+        social_portia = get_portia_with_custom_tools()
+
+        # Use the simplified social scheduler plan
+        scheduler_plan = create_simple_social_scheduler_plan()
+        
+        # Run the complete workflow in one go
+        with concurrent.futures.ThreadPoolExecutor() as executor:
+            def run_scheduler_plan():
+                return social_portia.run_plan(
+                    scheduler_plan,
+                    plan_run_inputs={
+                        "user_prompt": request.user_prompt,
+                        "media_url": request.media_url,
+                        "product_description": request.product_description,
+                        "dialog": request.dialog,
+                    },
+                )
+
+            future = executor.submit(run_scheduler_plan)
+            scheduler_run = future.result(timeout=180)  # 3 minute timeout
+
+        if scheduler_run.state != PlanRunState.COMPLETE:
+            raise Exception(f"Social scheduler failed with state: {scheduler_run.state}")
+
+        # Extract results from different steps
+        step_outputs = scheduler_run.outputs.step_outputs
+        logger.info(f"Available step outputs: {list(step_outputs.keys())}")
+        
+        # Map steps by index since Portia uses $step_X_output format
+        # Step 0: detect_channels, Step 1: generate_captions, Step 2: extract_time
+        if "$step_0_output" not in step_outputs:
+            raise Exception(f"Missing detect_channels step ($step_0_output). Available steps: {list(step_outputs.keys())}")
+        channel_result = step_outputs["$step_0_output"].value
+        
+        if "$step_1_output" not in step_outputs:
+            raise Exception(f"Missing generate_captions step ($step_1_output). Available steps: {list(step_outputs.keys())}")
+        captions_result = step_outputs["$step_1_output"].value
+        
+        if "$step_2_output" not in step_outputs:
+            raise Exception(f"Missing extract_time step ($step_2_output). Available steps: {list(step_outputs.keys())}")
+        time_result = step_outputs["$step_2_output"].value
+        
+        # Convert natural language time to ISO format
+        scheduled_time = convert_natural_time_to_iso(time_result.extracted_time)
+
+        # Prepare final data for Google Sheets
+        final_data = SchedulingData(
+            media_url=request.media_url,
+            instagram_caption=captions_result.instagram_caption,
+            date_time=scheduled_time,
+            twitter_post=captions_result.twitter_post or "",
+            channel=captions_result.channel,
+        )
+
+        # Save to Google Sheets
+        sheets_plan = create_sheets_integration_plan(final_data)
+        
+        with concurrent.futures.ThreadPoolExecutor() as executor:
+            def run_sheets_plan():
+                return social_portia.run_plan(
+                    sheets_plan,
+                    plan_run_inputs={
+                        "media_url": final_data.media_url,
+                        "instagram_caption": final_data.instagram_caption,
+                        "date_time": final_data.date_time,
+                        "twitter_post": final_data.twitter_post,
+                        "channel": final_data.channel,
+                    },
+                )
+
+            future = executor.submit(run_sheets_plan)
+            sheets_run = future.result(timeout=60)  # 1 minute timeout
+
+        # Return the complete result
+        return {
+            "status": "completed",
+            "instagram_caption": final_data.instagram_caption,
+            "twitter_post": final_data.twitter_post,
+            "channel": final_data.channel,
+            "scheduled_time": scheduled_time,
+            "media_url": final_data.media_url,
+            "message": "Social media post has been scheduled successfully!",
+        }
+
+    except Exception as e:
+        logger.error(f"Error in simple social scheduler execution: {str(e)}")
+        logger.error(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 # Social Scheduler Endpoints
 @app.post("/execute-social-scheduler", response_model=SocialSchedulerResponse)
 async def execute_social_scheduler(request: SocialSchedulerRequest):
@@ -1133,365 +1145,187 @@ async def execute_social_scheduler(request: SocialSchedulerRequest):
 
 @app.post("/execute-social-scheduler-realtime")
 async def execute_social_scheduler_realtime(request: SocialSchedulerRequest):
-    """Execute social scheduler workflow with real-time streaming"""
-    return StreamingResponse(
-        stream_social_scheduler_execution(request),
-        media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "Connection": "keep-alive",
-            "Access-Control-Allow-Origin": "*",
-        },
-    )
-
-
-@app.post("/resume-social-streaming/{plan_run_id}")
-async def resume_social_streaming(
-    plan_run_id: str, clarification_response: ClarificationResponse
-):
-    """Resume a streaming social scheduler plan after resolving clarification"""
-    try:
-        # Find the clarification to resolve
-        clarification_id = clarification_response.clarification_id
-        if clarification_id not in plan_clarifications:
-            raise HTTPException(
-                status_code=404, detail=f"Clarification {clarification_id} not found"
-            )
-
-        clarification_data = plan_clarifications[clarification_id]
-        clarification = clarification_data["clarification"]
-        plan_run = clarification_data["plan_run"]
-        
-        # Get the stored plan data
-        if plan_run_id not in running_plans:
-            raise HTTPException(status_code=404, detail="Plan run not found")
-        
-        plan_data = running_plans[plan_run_id]
-        social_portia = plan_data["social_portia"]
-
-        def resolve_and_resume():
-            # Resolve the clarification
-            updated_plan_run = social_portia.resolve_clarification(
-                clarification, clarification_response.response, plan_run
-            )
-            # Resume the plan run
-            resumed_plan_run = social_portia.resume(updated_plan_run)
+    """Execute simplified social scheduler workflow with real-time streaming"""
+    
+    async def stream_simple_scheduler():
+        try:
+            yield f"data: {safe_json_dumps({'type': 'started', 'message': 'Starting social media scheduling...'})}\n\n"
             
-            # Check which workflow step we're in
-            workflow_step = clarification_data.get("workflow_step", "content_validation")
+            # Get Portia instance
+            social_portia = get_portia_with_custom_tools()
             
-            if workflow_step == "content_validation" and resumed_plan_run.state == PlanRunState.COMPLETE:
-                # Content validation completed, continue to time scheduling
-                logger.info("Content validation completed, proceeding to time scheduling")
-                
-                from social_scheduler import create_time_scheduling_plan
-                
-                time_plan = create_time_scheduling_plan()
-                time_run = social_portia.run_plan(time_plan)
-                
-                if time_run.state == PlanRunState.NEED_CLARIFICATION:
-                    # Store time scheduling clarification
-                    time_clarifications = time_run.get_outstanding_clarifications()
-                    for time_clarification in time_clarifications:
-                        plan_clarifications[str(time_clarification.id)] = {
-                            "clarification": time_clarification,
-                            "plan_run": time_run,
-                            "workflow_step": "time_scheduling",
-                            "social_portia": social_portia,
-                            "validation_result": resumed_plan_run.outputs.final_output.value,
-                            "request": clarification_data["request"]
-                        }
-                    
-                    return time_run
+            # Create event queue for this execution
+            event_queue = queue.Queue()
+
+            # Define streaming hook functions
+            def before_step_hook(plan, plan_run, step):
+                logger.info(f"Hook: Before step - {getattr(step, 'task', 'Unknown')}")
+                event_queue.put({
+                    'type': 'step_started',
+                    'step_index': getattr(plan_run, 'current_step_index', 0),
+                    'step_name': getattr(step, 'task', 'Unknown Step'),
+                    'tool_id': getattr(step, 'tool_id', 'unknown'),
+                    'message': f"Starting: {getattr(step, 'task', 'Unknown Step')}",
+                    'plan_run_id': str(plan_run.id),
+                })
+
+            def after_step_hook(plan, plan_run, step, output):
+                logger.info(f"Hook: After step - {getattr(step, 'task', 'Unknown')}")
+                # Get the step output
+                output_value = ""
+                if hasattr(output, 'value'):
+                    output_value = str(output.value)[:200]  # Truncate long outputs
+                elif hasattr(output, 'summary'):
+                    output_value = str(output.summary)[:200]
                 else:
-                    # Time scheduling completed without clarification, continue to sheets
-                    return _continue_to_sheets(time_run, clarification_data)
-            
-            elif workflow_step == "time_scheduling" and resumed_plan_run.state == PlanRunState.COMPLETE:
-                # Time scheduling completed, continue to Google Sheets
-                logger.info("Time scheduling completed, proceeding to Google Sheets")
-                return _continue_to_sheets(resumed_plan_run, clarification_data)
-            
-            return resumed_plan_run
-        
-        def _continue_to_sheets(time_run, clarification_data):
-            """Helper function to continue to Google Sheets step"""
-            from social_scheduler import create_sheets_integration_plan, SchedulingData, convert_natural_time_to_iso
-            
-            time_result = time_run.outputs.final_output.value
-            scheduled_time = convert_natural_time_to_iso(time_result)
-            request = clarification_data["request"]
-            
-            # Get final captions - could be from validation_result or generated_captions
-            validation_result = clarification_data.get("validation_result")
-            if validation_result and isinstance(validation_result, str):
-                # Parse validation result if it's JSON
+                    output_value = str(output)[:200]
+
+                event_queue.put({
+                    'type': 'step_completed',
+                    'step_index': getattr(plan_run, 'current_step_index', 0),
+                    'step_name': getattr(step, 'task', 'Unknown Step'),
+                    'tool_id': getattr(step, 'tool_id', 'unknown'),
+                    'output': output_value,
+                    'message': f"Completed: {getattr(step, 'task', 'Unknown Step')}",
+                    'plan_run_id': str(plan_run.id),
+                })
+
+            # Run Portia execution in a separate thread with streaming hooks
+            scheduler_run = None
+            execution_error = None
+            execution_completed = False
+
+            def run_scheduler():
+                nonlocal scheduler_run, execution_error, execution_completed
                 try:
-                    import json
-                    final_captions_data = json.loads(validation_result)
-                    from social_scheduler import CaptionGeneration
-                    final_captions = CaptionGeneration(**final_captions_data)
-                except:
-                    final_captions = clarification_data.get("generated_captions")
-            else:
-                final_captions = clarification_data.get("generated_captions")
+                    logger.info("Starting plan execution with custom hooks")
+
+                    # Temporarily modify the social_portia instance's execution hooks
+                    original_hooks = social_portia.execution_hooks
+
+                    # Create new hooks that include our event capturing
+                    custom_hooks = BaseExecutionHooks(
+                        before_step_execution=before_step_hook,
+                        after_step_execution=after_step_hook,
+                    )
+
+                    # Set the custom hooks
+                    social_portia.execution_hooks = custom_hooks
+
+                    try:
+                        # Run the plan with our custom hooks
+                        scheduler_plan = create_simple_social_scheduler_plan()
+                        scheduler_run = social_portia.run_plan(
+                            scheduler_plan,
+                            plan_run_inputs={
+                                "user_prompt": request.user_prompt,
+                                "media_url": request.media_url,
+                                "product_description": request.product_description,
+                                "dialog": request.dialog,
+                            },
+                        )
+                        logger.info(f"Plan execution completed with state: {scheduler_run.state}")
+                    finally:
+                        # Restore original hooks
+                        social_portia.execution_hooks = original_hooks
+
+                    execution_completed = True
+
+                except Exception as e:
+                    logger.error(f"Error in run_scheduler thread: {str(e)}")
+                    execution_error = e
+                    execution_completed = True
+
+            # Start execution in background thread
+            execution_thread = threading.Thread(target=run_scheduler)
+            execution_thread.start()
+
+            # Stream events in real-time as they come from the hooks
+            logger.info("Starting real-time event streaming loop")
+            while not execution_completed:
+                # Get new events from the event queue
+                events = []
+                while not event_queue.empty():
+                    try:
+                        events.append(event_queue.get_nowait())
+                    except queue.Empty:
+                        break
+
+                # Stream each event immediately as it arrives
+                for event in events:
+                    logger.debug(f"Streaming event: {event['type']}")
+                    yield f"data: {safe_json_dumps(event)}\n\n"
+
+                # Check for execution error
+                if execution_error:
+                    logger.error(f"Streaming execution error: {execution_error}")
+                    yield f"data: {safe_json_dumps({'type': 'error', 'message': str(execution_error)})}\n\n"
+                    break
+
+                # Small delay to avoid busy waiting
+                await asyncio.sleep(0.1)
+
+            logger.info(f"Real-time streaming completed. execution_completed={execution_completed}, execution_error={execution_error}")
+
+            # Wait for thread to complete
+            execution_thread.join(timeout=5)
+
+            # Send any remaining events
+            final_events = []
+            while not event_queue.empty():
+                try:
+                    final_events.append(event_queue.get_nowait())
+                except queue.Empty:
+                    break
+
+            for event in final_events:
+                yield f"data: {safe_json_dumps(event)}\n\n"
+
+            # Handle final result
+            if execution_error:
+                yield f"data: {safe_json_dumps({'type': 'error', 'message': str(execution_error)})}\n\n"
+                return
+
+            if not scheduler_run:
+                yield f"data: {safe_json_dumps({'type': 'error', 'message': 'No plan run result'})}\n\n"
+                return
+
+            if scheduler_run.state != PlanRunState.COMPLETE:
+                yield f"data: {safe_json_dumps({'type': 'error', 'message': f'Scheduler failed with state: {scheduler_run.state}'})}\n\n"
+                return
+
+            # Extract results
+            step_outputs = scheduler_run.outputs.step_outputs
+            logger.info(f"Available step outputs in streaming: {list(step_outputs.keys())}")
             
-            # Prepare final data
+            # Map steps by index since Portia uses $step_X_output format
+            # Step 0: detect_channels, Step 1: generate_captions, Step 2: extract_time
+            if "$step_0_output" not in step_outputs:
+                raise Exception(f"Missing detect_channels step ($step_0_output) in streaming. Available steps: {list(step_outputs.keys())}")
+            channel_result = step_outputs["$step_0_output"].value
+            
+            if "$step_1_output" not in step_outputs:
+                raise Exception(f"Missing generate_captions step ($step_1_output) in streaming. Available steps: {list(step_outputs.keys())}")
+            captions_result = step_outputs["$step_1_output"].value
+            
+            if "$step_2_output" not in step_outputs:
+                raise Exception(f"Missing extract_time step ($step_2_output) in streaming. Available steps: {list(step_outputs.keys())}")
+            time_result = step_outputs["$step_2_output"].value
+
+            # Convert time and prepare data
+            scheduled_time = convert_natural_time_to_iso(time_result.extracted_time)
             final_data = SchedulingData(
                 media_url=request.media_url,
-                instagram_caption=final_captions.instagram_caption,
+                instagram_caption=captions_result.instagram_caption,
                 date_time=scheduled_time,
-                twitter_post=final_captions.twitter_post or "",
-                channel=final_captions.channel,
+                twitter_post=captions_result.twitter_post or "",
+                channel=captions_result.channel,
             )
-            
+
+            # Save to Google Sheets
             sheets_plan = create_sheets_integration_plan(final_data)
-            sheets_run = clarification_data["social_portia"].run_plan(
-                sheets_plan,
-                plan_run_inputs={
-                    "media_url": final_data.media_url,
-                    "instagram_caption": final_data.instagram_caption,
-                    "date_time": final_data.date_time,
-                    "twitter_post": final_data.twitter_post,
-                    "channel": final_data.channel,
-                },
-            )
             
-            return sheets_run
-
-        # Run in separate thread to avoid event loop conflicts
-        with concurrent.futures.ThreadPoolExecutor() as executor:
-            future = executor.submit(resolve_and_resume)
-            resumed_plan_run = future.result()
-
-        # Update stored plan run
-        plan_data["caption_run"] = resumed_plan_run
-
-        # Clean up the clarification
-        del plan_clarifications[clarification_id]
-
-        return {
-            "status": "resumed",
-            "plan_run_id": plan_run_id,
-            "clarification_id": clarification_id,
-            "new_state": str(resumed_plan_run.state),
-            "message": "Plan execution resumed successfully"
-        }
-
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.post("/resume-social-plan/{plan_run_id}")
-async def resume_social_plan(
-    plan_run_id: str, clarification_response: ClarificationResponse
-):
-    """Resume social scheduler plan after resolving clarification using Portia's built-in system"""
-    try:
-        if plan_run_id not in running_plans:
-            raise HTTPException(status_code=404, detail="Plan run not found")
-
-        plan_data = running_plans[plan_run_id]
-        social_portia = plan_data["social_portia"]
-        caption_run = plan_data["caption_run"]
-
-        logger.info(
-            f"Resuming social plan {plan_run_id} with clarification response: {clarification_response.response}"
-        )
-
-        # Find the clarification to resolve
-        clarifications = caption_run.get_outstanding_clarifications()
-        target_clarification = None
-
-        for clarification in clarifications:
-            if str(clarification.id) == clarification_response.clarification_id:
-                target_clarification = clarification
-                break
-
-        if not target_clarification:
-            raise HTTPException(
-                status_code=404,
-                detail=f"Clarification {clarification_response.clarification_id} not found",
-            )
-
-        def resolve_and_resume():
-            """Resolve clarification and resume plan execution"""
-            # Resolve the clarification with user response
-            updated_plan_run = social_portia.resolve_clarification(
-                target_clarification, clarification_response.response, caption_run
-            )
-
-            # Resume the plan execution
-            resumed_plan_run = social_portia.resume(updated_plan_run)
-            return resumed_plan_run
-
-        # Execute in separate thread to avoid event loop conflicts
-        with concurrent.futures.ThreadPoolExecutor() as executor:
-            future = executor.submit(resolve_and_resume)
-            resumed_plan_run = future.result(timeout=120)
-
-        # Update stored plan run
-        plan_data["caption_run"] = resumed_plan_run
-
-        # Check the final state after resumption
-        if resumed_plan_run.state == PlanRunState.COMPLETE:
-            # Plan completed successfully
-            final_captions = resumed_plan_run.outputs.final_output.value
-            plan_data["current_phase"] = "completed"
-            plan_data["final_captions"] = final_captions
-
-            return {
-                "status": "completed",
-                "message": "Social scheduler plan completed successfully",
-                "plan_run_id": plan_run_id,
-                "final_captions": final_captions.model_dump(),
-                "state": str(resumed_plan_run.state),
-            }
-
-        elif resumed_plan_run.state == PlanRunState.NEED_CLARIFICATION:
-            # Plan needs another clarification
-            clarifications = resumed_plan_run.get_outstanding_clarifications()
-            clarification_data = []
-
-            for clarification in clarifications:
-                clarification_info = {
-                    "id": str(clarification.id),
-                    "category": clarification.category.value,
-                    "user_guidance": clarification.user_guidance,
-                    "argument_name": getattr(clarification, "argument_name", None),
-                    "options": getattr(clarification, "options", None),
-                    "resolved": clarification.resolved,
-                }
-                clarification_data.append(clarification_info)
-
-            return {
-                "status": "needs_clarification",
-                "message": "Plan execution continues but needs another clarification",
-                "plan_run_id": plan_run_id,
-                "clarifications": clarification_data,
-                "state": str(resumed_plan_run.state),
-            }
-
-        else:
-            return {
-                "status": "unknown",
-                "message": f"Plan execution resumed with unexpected state: {resumed_plan_run.state}",
-                "plan_run_id": plan_run_id,
-                "state": str(resumed_plan_run.state),
-            }
-
-    except Exception as e:
-        logger.error(f"Error resuming social plan: {str(e)}")
-        logger.error(traceback.format_exc())
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.post("/resolve-social-clarification/{plan_run_id}")
-async def resolve_social_clarification(
-    plan_run_id: str, response: SocialClarificationResponse
-):
-    """Legacy endpoint - resolve clarification for social scheduler (kept for compatibility)"""
-    try:
-        if plan_run_id not in running_plans:
-            raise HTTPException(status_code=404, detail="Plan run not found")
-
-        plan_data = running_plans[plan_run_id]
-        social_portia = plan_data["social_portia"]
-
-        logger.info(
-            f"Resolving social clarification for plan {plan_run_id}: {response.clarification_argument} = {response.response}"
-        )
-
-        # Handle different phases of the social workflow
-        current_phase = plan_data.get("current_phase", "content_validation")
-
-        if current_phase == "content_validation":
-            # Continue with content validation workflow
-            return await handle_content_validation_clarification(
-                plan_run_id, response, plan_data
-            )
-        elif current_phase == "time_scheduling":
-            # Continue with time scheduling workflow
-            return await handle_time_scheduling_clarification(
-                plan_run_id, response, plan_data
-            )
-        else:
-            raise HTTPException(
-                status_code=400, detail=f"Unknown workflow phase: {current_phase}"
-            )
-
-    except Exception as e:
-        logger.error(f"Error resolving social clarification: {str(e)}")
-        logger.error(traceback.format_exc())
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-async def handle_content_validation_clarification(
-    plan_run_id: str, response: SocialClarificationResponse, plan_data: dict
-):
-    """Handle content validation clarifications"""
-    social_portia = plan_data["social_portia"]
-    generated_captions = plan_data["generated_captions"]
-
-    # Create content validation plan
-    validation_plan = create_content_validation_plan(generated_captions)
-
-    # Store clarification response
-    if "clarification_responses" not in plan_data:
-        plan_data["clarification_responses"] = {}
-    plan_data["clarification_responses"][
-        response.clarification_argument
-    ] = response.response
-
-    # If user approved content, move to time scheduling
-    if "approve" in response.response.lower():
-        plan_data["current_phase"] = "time_scheduling"
-        plan_data["approved_captions"] = generated_captions
-
-        return {
-            "status": "content_approved",
-            "message": "Content approved, ready for time scheduling",
-            "next_phase": "time_scheduling",
-        }
-    else:
-        # User wants changes - continue content validation cycle
-        return {
-            "status": "content_revision_requested",
-            "message": "Content revision requested",
-            "next_phase": "content_validation",
-        }
-
-
-async def handle_time_scheduling_clarification(
-    plan_run_id: str, response: SocialClarificationResponse, plan_data: dict
-):
-    """Handle time scheduling clarifications"""
-    try:
-        # Convert natural language time to ISO format
-        scheduled_time = convert_natural_time_to_iso(response.response)
-
-        # Get final captions
-        approved_captions = plan_data.get(
-            "approved_captions", plan_data["generated_captions"]
-        )
-        request = plan_data["request"]
-
-        # Create final scheduling data
-        final_data = SchedulingData(
-            media_url=request.media_url,
-            instagram_caption=approved_captions.instagram_caption,
-            date_time=scheduled_time,
-            twitter_post=approved_captions.twitter_post or "",
-            channel=approved_captions.channel,
-        )
-
-        # Save to Google Sheets
-        social_portia = plan_data["social_portia"]
-        sheets_plan = create_sheets_integration_plan(final_data)
-
-        # Use ThreadPoolExecutor to avoid event loop conflicts
-        with concurrent.futures.ThreadPoolExecutor() as executor:
-
-            def run_sheets_plan():
+            def run_sheets():
                 return social_portia.run_plan(
                     sheets_plan,
                     plan_run_inputs={
@@ -1503,342 +1337,51 @@ async def handle_time_scheduling_clarification(
                     },
                 )
 
-            future = executor.submit(run_sheets_plan)
-            sheets_run = future.result(timeout=60)  # 1 minute timeout
+            with concurrent.futures.ThreadPoolExecutor() as executor:
+                future = executor.submit(run_sheets)
+                sheets_run = future.result(timeout=60)
 
-        # Mark as completed
-        plan_data["current_phase"] = "completed"
-        plan_data["final_scheduling_data"] = final_data
+            # Send final result
+            result = {
+                "type": "completed",
+                "status": "completed",
+                "instagram_caption": final_data.instagram_caption,
+                "twitter_post": final_data.twitter_post,
+                "channel": final_data.channel,
+                "scheduled_time": scheduled_time,
+                "media_url": final_data.media_url,
+                "message": "Social media post has been scheduled successfully!",
+            }
+            
+            yield f"data: {safe_json_dumps(result)}\n\n"
 
-        return {
-            "status": "scheduling_complete",
-            "message": "Social media post has been scheduled successfully!",
-            "final_data": final_data.model_dump(),
-            "scheduled_time": scheduled_time,
-        }
+        except Exception as e:
+            logger.error(f"Error in simplified social scheduler streaming: {str(e)}")
+            yield f"data: {safe_json_dumps({'type': 'error', 'message': str(e)})}\n\n"
+    
+    return StreamingResponse(
+        stream_simple_scheduler(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "Access-Control-Allow-Origin": "*",
+        },
+    )
 
-    except Exception as e:
-        logger.error(f"Error in time scheduling: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+
+# resume_social_streaming and resume_social_plan functions completely removed - no longer needed without clarifications
+
+# @app.post("/resolve-social-clarification/{plan_run_id}") - removed, no longer needed without clarifications
 
 
-async def stream_social_scheduler_execution(
-    request: SocialSchedulerRequest,
-) -> AsyncGenerator[str, None]:
-    """Stream social scheduler execution with real-time updates using execution hooks"""
-    try:
-        # Send initial data
-        yield f"data: {safe_json_dumps({'type': 'started', 'message': 'Starting social scheduler workflow...'})}\n\n"
+# handle_content_validation_clarification removed - no longer needed without clarifications
 
-        # Get Portia instance with custom tools
-        social_portia = get_portia_with_custom_tools()
 
-        # Create event queue for this execution
-        event_queue = queue.Queue()
+# handle_time_scheduling_clarification removed - no longer needed without clarifications
 
-        # Define streaming hook functions
-        def before_step_hook(plan, plan_run, step):
-            logger.info(
-                f"Social Hook: Before step - {getattr(step, 'task', 'Unknown')}"
-            )
-            event_queue.put(
-                {
-                    "type": "step_started",
-                    "step_index": getattr(plan_run, "current_step_index", 0),
-                    "step_name": getattr(step, "task", "Unknown Step"),
-                    "tool_id": getattr(step, "tool_id", "unknown"),
-                    "message": f"Starting step: {getattr(step, 'task', 'Unknown Step')}",
-                    "plan_run_id": str(plan_run.id),
-                }
-            )
 
-        def after_step_hook(plan, plan_run, step, output):
-            logger.info(f"Social Hook: After step - {getattr(step, 'task', 'Unknown')}")
-            # Get the step output
-            output_value = ""
-            if hasattr(output, "value"):
-                output_value = str(output.value)[:200]  # Truncate long outputs
-            elif hasattr(output, "summary"):
-                output_value = str(output.summary)[:200]
-            else:
-                output_value = str(output)[:200]
-
-            event_queue.put(
-                {
-                    "type": "step_completed",
-                    "step_index": getattr(plan_run, "current_step_index", 0),
-                    "step_name": getattr(step, "task", "Unknown Step"),
-                    "tool_id": getattr(step, "tool_id", "unknown"),
-                    "output": output_value,
-                    "message": f"Completed step: {getattr(step, 'task', 'Unknown Step')}",
-                    "plan_run_id": str(plan_run.id),
-                }
-            )
-
-        # Run social portia execution in a separate thread with real-time hooks
-        plan_run_result = None
-        execution_error = None
-        execution_completed = False
-
-        def run_social_portia():
-            nonlocal plan_run_result, execution_error, execution_completed
-            try:
-                logger.info(
-                    "Starting social scheduler plan execution with custom hooks"
-                )
-
-                # Temporarily modify the social_portia instance's execution hooks
-                original_hooks = social_portia.execution_hooks
-
-                # Create new hooks that include our event capturing
-                custom_hooks = BaseExecutionHooks(
-                    before_step_execution=before_step_hook,
-                    after_step_execution=after_step_hook,
-                )
-
-                # Set the custom hooks
-                social_portia.execution_hooks = custom_hooks
-
-                try:
-                    # Step 1: Generate captions
-                    event_queue.put({
-                        "type": "workflow_step",
-                        "step": "caption_generation",
-                        "message": "Step 1/4: Generating social media captions..."
-                    })
-                    
-                    caption_run = social_portia.run_plan(
-                        social_scheduler_plan,
-                        plan_run_inputs={
-                            "user_prompt": request.user_prompt,
-                            "media_url": request.media_url,
-                            "product_description": request.product_description,
-                            "dialog": request.dialog,
-                        },
-                    )
-                    
-                    if caption_run.state != PlanRunState.COMPLETE:
-                        raise Exception(f"Caption generation failed with state: {caption_run.state}")
-                    
-                    generated_captions = caption_run.outputs.final_output.value
-                    event_queue.put({
-                        "type": "step_result", 
-                        "step": "caption_generation",
-                        "result": generated_captions.model_dump() if hasattr(generated_captions, 'model_dump') else generated_captions,
-                        "message": "Captions generated successfully"
-                    })
-
-                    # Step 2: Content validation (with clarifications)
-                    from social_scheduler import create_content_validation_plan
-                    
-                    event_queue.put({
-                        "type": "workflow_step",
-                        "step": "content_validation", 
-                        "message": "Step 2/4: Validating content with user..."
-                    })
-                    
-                    validation_plan = create_content_validation_plan(generated_captions)
-                    validation_run = social_portia.run_plan(validation_plan)
-                    
-                    # Content validation requires clarifications - store and return
-                    if validation_run.state == PlanRunState.NEED_CLARIFICATION:
-                        plan_run_result = validation_run
-                        return
-                    
-                    # If validation completed without clarifications, continue to next steps
-                    # (This would be rare as ContentValidationTool always asks for approval)
-                    validation_result = validation_run.outputs.final_output.value
-                    plan_run_result = validation_run
-                    logger.info(
-                        f"Social scheduler plan completed with state: {plan_run_result.state}"
-                    )
-                finally:
-                    # Restore original hooks
-                    social_portia.execution_hooks = original_hooks
-
-                # Handle clarifications from content validation
-                if plan_run_result.state == PlanRunState.NEED_CLARIFICATION:
-                    plan_run_id = str(plan_run_result.id)
-                    
-                    # Store plan run for clarification handling  
-                    running_plans[plan_run_id] = {
-                        "social_portia": social_portia,
-                        "caption_run": plan_run_result,
-                        "request": request,
-                        "current_phase": "content_validation",
-                        "generated_captions": generated_captions
-                    }
-                    
-                    clarifications = plan_run_result.get_outstanding_clarifications()
-                    for clarification in clarifications:
-                        event_queue.put(
-                            {
-                                "type": "clarification_needed",
-                                "clarification_id": str(clarification.id),
-                                "user_guidance": clarification.user_guidance,
-                                "plan_run_id": plan_run_id,
-                                "message": "Content validation requires user input",
-                                "argument_name": getattr(
-                                    clarification, "argument_name", None
-                                ),
-                                "options": getattr(clarification, "options", None),
-                                "category": str(clarification.category),
-                                "workflow_step": "content_validation"
-                            }
-                        )
-                        
-                        # Store clarification for later resolution
-                        plan_clarifications[str(clarification.id)] = {
-                            "clarification": clarification,
-                            "plan_run": plan_run_result,
-                            "workflow_step": "content_validation",
-                            "social_portia": social_portia,
-                            "generated_captions": generated_captions,
-                            "request": request
-                        }
-
-                elif plan_run_result.state == PlanRunState.COMPLETE:
-                    # Extract final output
-                    final_output = (
-                        plan_run_result.outputs.final_output.value
-                        if hasattr(plan_run_result.outputs, "final_output")
-                        and plan_run_result.outputs.final_output
-                        else None
-                    )
-
-                    event_queue.put(
-                        {
-                            "type": "plan_completed",
-                            "message": "Social scheduler plan completed successfully",
-                            "plan_run_id": str(plan_run_result.id),
-                            "final_captions": (
-                                final_output.model_dump()
-                                if final_output and hasattr(final_output, "model_dump")
-                                else final_output
-                            ),
-                        }
-                    )
-
-                execution_completed = True
-
-            except Exception as e:
-                logger.error(
-                    f"Error in run_social_portia thread: {str(e)}\\n{traceback.format_exc()}"
-                )
-                execution_error = e
-                execution_completed = True
-
-        # Start execution in background thread
-        execution_thread = threading.Thread(target=run_social_portia)
-        execution_thread.start()
-
-        # Stream events in real-time as they come from the hooks
-        logger.info("Starting real-time social scheduler event streaming loop")
-        while not execution_completed:
-            # Get new events from the event queue
-            events = []
-            while not event_queue.empty():
-                try:
-                    events.append(event_queue.get_nowait())
-                except queue.Empty:
-                    break
-
-            # Stream each event immediately as it arrives
-            for event in events:
-                logger.debug(f"Streaming social event: {event['type']}")
-                yield f"data: {safe_json_dumps(event)}\n\n"
-
-            # Check for execution error
-            if execution_error:
-                logger.error(f"Streaming execution error: {execution_error}")
-                yield f"data: {safe_json_dumps({'type': 'error', 'message': str(execution_error)})}\n\n"
-                break
-
-            # Small delay to avoid busy waiting
-            await asyncio.sleep(0.1)
-
-        logger.info(
-            f"Real-time social streaming completed. execution_completed={execution_completed}, execution_error={execution_error}"
-        )
-
-        # Wait for thread to complete
-        execution_thread.join(timeout=2)
-
-        # Send any remaining events
-        final_events = []
-        while not event_queue.empty():
-            try:
-                final_events.append(event_queue.get_nowait())
-            except queue.Empty:
-                break
-
-        for event in final_events:
-            yield f"data: {safe_json_dumps(event)}\n\n"
-
-        # Handle final state management
-        if plan_run_result:
-            plan_run_id = str(plan_run_result.id)
-
-            if plan_run_result.state == PlanRunState.NEED_CLARIFICATION:
-                # Store plan run for clarification handling
-                running_plans[plan_run_id] = {
-                    "social_portia": social_portia,
-                    "caption_run": plan_run_result,
-                    "request": request,
-                    "current_phase": "content_validation",
-                }
-
-                # Get clarifications and send them
-                clarifications = plan_run_result.get_outstanding_clarifications()
-                clarification_data = []
-                for clarification in clarifications:
-                    clarification_info = {
-                        "id": str(clarification.id),
-                        "category": clarification.category.value,
-                        "user_guidance": clarification.user_guidance,
-                        "argument_name": getattr(clarification, "argument_name", None),
-                        "options": getattr(clarification, "options", None),
-                        "resolved": clarification.resolved,
-                    }
-                    clarification_data.append(clarification_info)
-
-                # Get generated captions if available
-                generated_captions = None
-                if (
-                    hasattr(plan_run_result.outputs, "final_output")
-                    and plan_run_result.outputs.final_output
-                ):
-                    generated_captions = plan_run_result.outputs.final_output.value
-
-                yield f"data: {safe_json_dumps({'type': 'clarification_required', 'plan_run_id': plan_run_id, 'clarifications': clarification_data, 'generated_captions': generated_captions.model_dump() if generated_captions and hasattr(generated_captions, 'model_dump') else generated_captions, 'message': 'User input required to continue'})}\n\n"
-
-            elif plan_run_result.state == PlanRunState.COMPLETE:
-                # Store completed plan run
-                final_output = (
-                    plan_run_result.outputs.final_output.value
-                    if hasattr(plan_run_result.outputs, "final_output")
-                    and plan_run_result.outputs.final_output
-                    else None
-                )
-
-                running_plans[plan_run_id] = {
-                    "social_portia": social_portia,
-                    "generated_captions": final_output,
-                    "caption_run": plan_run_result,
-                    "request": request,
-                    "current_phase": "completed",
-                }
-
-                # Stream is complete, exit the function
-                logger.info(
-                    f"Social scheduler streaming completed successfully for plan {plan_run_id}"
-                )
-                return
-
-    except Exception as e:
-        logger.error(f"Error in social scheduler streaming: {str(e)}")
-        logger.error(traceback.format_exc())
-        yield f"data: {safe_json_dumps({'type': 'error', 'message': str(e)})}\n\n"
+# Old stream_social_scheduler_execution function removed - replaced by simplified streaming in execute_social_scheduler_realtime
 
 
 if __name__ == "__main__":

@@ -250,6 +250,35 @@ class StreamingExecutionHooks:
             }
         )
 
+    def on_clarification_raised(self, plan: Plan, plan_run: PlanRun, clarification) -> None:
+        """Called when a clarification is raised during plan execution"""
+        try:
+            print(f"🤔 Clarification needed: {clarification.user_guidance}")
+            
+            # Create full clarification object for streaming
+            full_clarification_info = {
+                "uuid": str(clarification.id),
+                "plan_run_id": str(clarification.plan_run_id),
+                "category": str(clarification.category),
+                "response": getattr(clarification, "response", None),
+                "step": clarification.step,
+                "user_guidance": clarification.user_guidance,
+                "resolved": clarification.resolved,
+                "argument_name": getattr(clarification, "argument_name", None),
+                "options": getattr(clarification, "options", None),
+                "action_url": getattr(clarification, "action_url", None),
+            }
+            
+            self.write_stream_update(
+                {
+                    "status": "needs_clarification",
+                    "clarification_raised_at": datetime.datetime.now().isoformat(),
+                    "clarification": full_clarification_info,
+                }
+            )
+        except Exception as e:
+            print(f"Error handling clarification in streaming hooks: {e}")
+
 
 def create_streaming_hooks(
     stream_file_path: str = "plan_stream.json",
@@ -262,4 +291,6 @@ def create_streaming_hooks(
         before_step_execution=hooks.before_step_execution,
         after_step_execution=hooks.after_step_execution,
         after_last_step=hooks.after_last_step,
+        # Add clarification handler to capture clarifications when raised
+        on_clarification_raised=hooks.on_clarification_raised,
     )
