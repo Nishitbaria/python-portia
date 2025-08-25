@@ -185,6 +185,8 @@ plan_*.json
 *.sqlite
 *.sqlite3
 
+.env
+
 # Replicate MCP specific
 replicate-mcp-call/character-flow/venv/
 replicate-mcp-call/character-flow/__pycache__/
